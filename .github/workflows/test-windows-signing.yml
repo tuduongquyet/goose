@@ -1,7 +1,20 @@
 name: "Test Windows Signing"
 
 on:
+  workflow_call:
+    inputs:
+      signing:
+        description: 'Whether to sign'
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      signing:
+        description: 'Whether to sign'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   id-token: write
@@ -11,7 +24,7 @@ jobs:
   test-signing:
     name: Test Azure Trusted Signing
     runs-on: windows-latest
-    environment: signing
+    environment: ${{ inputs.signing && 'signing' || null }}
 
     steps:
       - name: Build hello world executable
