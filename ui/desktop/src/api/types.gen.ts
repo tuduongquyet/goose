@@ -457,6 +457,7 @@ export type ExtensionData = {
 
 export type ExtensionEntry = ExtensionConfig & {
     enabled: boolean;
+    hidden?: boolean;
 };
 
 export type ExtensionLoadResult = {

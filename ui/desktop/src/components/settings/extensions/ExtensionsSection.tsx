@@ -81,6 +81,7 @@ export default function ExtensionsSection({
     if (extensionsList.length === 0) return [];
 
     return [...extensionsList]
+      .filter((ext) => !ext.hidden)
       .sort((a, b) => {
         // First sort by builtin
         if (a.type === 'builtin' && b.type !== 'builtin') return -1;
@@ -228,9 +229,7 @@ export default function ExtensionsSection({
             <Button
               className="flex items-center gap-2 justify-center"
               variant="secondary"
-              onClick={() =>
-                window.open('https://goose-docs.ai/v1/extensions/', '_blank')
-              }
+              onClick={() => window.open('https://goose-docs.ai/v1/extensions/', '_blank')}
             >
               <GPSIcon size={12} />
               {intl.formatMessage(i18n.browseExtensions)}

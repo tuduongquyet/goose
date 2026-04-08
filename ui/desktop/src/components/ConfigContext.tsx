@@ -25,6 +25,7 @@ export type { ExtensionConfig } from '../api/types.gen';
 // Define a local version that matches the structure of the imported one
 export type FixedExtensionEntry = ExtensionConfig & {
   enabled: boolean;
+  hidden?: boolean;
 };
 
 interface ConfigContextType {

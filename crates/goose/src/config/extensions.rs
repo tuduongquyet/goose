@@ -16,6 +16,8 @@ const EXTENSIONS_CONFIG_KEY: &str = "extensions";
 #[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
 pub struct ExtensionEntry {
     pub enabled: bool,
+    #[serde(default)]
+    pub hidden: bool,
     #[serde(flatten)]
     pub config: ExtensionConfig,
 }
