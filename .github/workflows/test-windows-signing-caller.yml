@@ -1,9 +1,6 @@
 name: "Test Windows Signing Caller"
 
 on:
-  push:
-    branches:
-      - aaif-signing-windows
   workflow_dispatch:
 
 permissions:

@@ -24,7 +24,7 @@ jobs:
   test-signing:
     name: Test Azure Trusted Signing
     runs-on: windows-latest
-    environment: ${{ inputs.signing && 'signing' || null }}
+    environment: ${{ (inputs.signing == true) && 'signing' || null }}
 
     steps:
       - name: Build hello world executable
