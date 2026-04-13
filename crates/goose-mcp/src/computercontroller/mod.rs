@@ -37,6 +37,26 @@ mod xlsx_tool;
 mod platform;
 use platform::{create_system_automation, SystemAutomation};
 
+/// Maximum number of characters allowed for stdout/stderr output from automation_script.
+const OUTPUT_CHAR_CAP: usize = 50_000;
+
+/// Truncate output using head+tail strategy (40% head, 60% tail) if it exceeds `OUTPUT_CHAR_CAP`.
+/// This preserves the beginning and end of the output while omitting the middle.
+fn truncate_output(s: &str) -> String {
+    if s.len() <= OUTPUT_CHAR_CAP {
+        return s.to_string();
+    }
+    let head_len = OUTPUT_CHAR_CAP * 2 / 5; // 40%
+    let tail_len = OUTPUT_CHAR_CAP - head_len; // 60%
+    let head = &s[..head_len];
+    let tail = &s[s.len() - tail_len..];
+    let omitted = s.len() - head_len - tail_len;
+    format!(
+        "{}\n\n... [truncated: {} characters omitted] ...\n\n{}",
+        head, omitted, tail
+    )
+}
+
 /// Enum for save_as parameter in web_scrape tool
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone, Default)]
 #[serde(rename_all = "lowercase")]
@@ -885,8 +905,8 @@ impl ComputerControllerServer {
             }
         };
 
-        let output_str = String::from_utf8_lossy(&output.stdout).into_owned();
-        let error_str = String::from_utf8_lossy(&output.stderr).into_owned();
+        let output_str = truncate_output(&String::from_utf8_lossy(&output.stdout));
+        let error_str = truncate_output(&String::from_utf8_lossy(&output.stderr));
 
         let mut result = if output.status.success() {
             format!("Script completed successfully.\n\nOutput:\n{}", output_str)
