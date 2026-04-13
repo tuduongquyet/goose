@@ -41,6 +41,38 @@ pub fn safe_truncate(s: &str, max_chars: usize) -> String {
     }
 }
 
+/// Truncate large text keeping the head and tail, dropping the middle.
+///
+/// This preserves the beginning (setup, headers, context) and end (final output,
+/// errors, conclusions) of large outputs while dropping the noisy middle.
+///
+/// # Arguments
+/// * `s` - The string to truncate
+/// * `max_chars` - Maximum character count for the result (excluding the truncation notice)
+/// * `head_ratio` - Fraction of max_chars to allocate to the head (e.g., 0.4 = 40% head, 60% tail)
+pub fn head_tail_truncate(s: &str, max_chars: usize, head_ratio: f64) -> String {
+    let total_chars = s.chars().count();
+    if total_chars <= max_chars {
+        return s.to_string();
+    }
+
+    let head_ratio = head_ratio.clamp(0.0, 1.0);
+    let head_chars = ((max_chars as f64) * head_ratio) as usize;
+    let tail_chars = max_chars.saturating_sub(head_chars);
+    let dropped = total_chars.saturating_sub(head_chars + tail_chars);
+
+    let head: String = s.chars().take(head_chars).collect();
+    let tail: String = s
+        .chars()
+        .skip(total_chars.saturating_sub(tail_chars))
+        .collect();
+
+    format!(
+        "{}\n\n... [{} characters truncated] ...\n\n{}",
+        head, dropped, tail
+    )
+}
+
 pub fn is_token_cancelled(cancellation_token: &Option<CancellationToken>) -> bool {
     cancellation_token
         .as_ref()
@@ -124,5 +156,49 @@ mod tests {
         let mixed = "Hello こんにちは";
         assert_eq!(safe_truncate(mixed, 20), mixed);
         assert_eq!(safe_truncate(mixed, 8), "Hello...");
+    }
+
+    #[test]
+    fn test_head_tail_truncate_short_passthrough() {
+        assert_eq!(head_tail_truncate("hello", 100, 0.4), "hello");
+        assert_eq!(head_tail_truncate("", 100, 0.4), "");
+    }
+
+    #[test]
+    fn test_head_tail_truncate_splits_correctly() {
+        let input = "a".repeat(1000);
+        let result = head_tail_truncate(&input, 100, 0.4);
+        assert!(result.contains("characters truncated"));
+        // Head should be 40 chars of 'a'
+        assert!(result.starts_with(&"a".repeat(40)));
+        // Tail should be 60 chars of 'a'
+        assert!(result.ends_with(&"a".repeat(60)));
+    }
+
+    #[test]
+    fn test_head_tail_truncate_preserves_content() {
+        // Build a string where head and tail are distinguishable
+        let head_part = "HEAD".repeat(50); // 200 chars
+        let middle = "M".repeat(800);
+        let tail_part = "TAIL".repeat(50); // 200 chars
+        let input = format!("{}{}{}", head_part, middle, tail_part);
+        assert_eq!(input.chars().count(), 1200);
+
+        let result = head_tail_truncate(&input, 400, 0.5);
+        // Head: 200 chars, Tail: 200 chars
+        assert!(result.starts_with(&"HEAD".repeat(50)));
+        assert!(result.ends_with(&"TAIL".repeat(50)));
+        assert!(result.contains("800 characters truncated"));
+    }
+
+    #[test]
+    fn test_head_tail_truncate_exact_boundary() {
+        let input = "a".repeat(100);
+        // Exactly at max — no truncation
+        assert_eq!(head_tail_truncate(&input, 100, 0.4), input);
+        // One over — triggers truncation
+        let input101 = "a".repeat(101);
+        let result = head_tail_truncate(&input101, 100, 0.4);
+        assert!(result.contains("truncated"));
     }
 }
