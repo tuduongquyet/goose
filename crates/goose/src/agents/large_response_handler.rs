@@ -3,7 +3,16 @@ use rmcp::model::{CallToolResult, Content, ErrorData};
 use std::fs::File;
 use std::io::Write;
 
+use crate::utils::head_tail_truncate;
+
+/// Results above this get head+tail truncated in-place.
+const TRUNCATION_THRESHOLD: usize = 100_000;
+
+/// Results above this get written to a temp file (preserves full content on disk).
 const LARGE_TEXT_THRESHOLD: usize = 200_000;
+
+/// Head ratio for truncation (40% head, 60% tail).
+const HEAD_RATIO: f64 = 0.4;
 
 /// Process tool response and handle large text content
 pub fn process_tool_response(
@@ -16,31 +25,36 @@ pub fn process_tool_response(
             for content in result.content {
                 match content.as_text() {
                     Some(text_content) => {
-                        // Check if text exceeds threshold
-                        if text_content.text.chars().count() > LARGE_TEXT_THRESHOLD {
-                            // Write to temp file
+                        let char_count = text_content.text.chars().count();
+                        if char_count > LARGE_TEXT_THRESHOLD {
+                            // Very large: write to temp file
                             match write_large_text_to_file(&text_content.text) {
                                 Ok(file_path) => {
-                                    // Create a new text content with reference to the file
                                     let message = format!(
                                         "The response returned from the tool call was larger ({} characters) and is stored in the file which you can use other tools to examine or search in: {}",
-                                        text_content.text.chars().count(),
+                                        char_count,
                                         file_path
                                     );
                                     processed_contents.push(Content::text(message));
                                 }
                                 Err(e) => {
-                                    // If file writing fails, include original content with warning
                                     let warning = format!(
-                                        "Warning: Failed to write large response to file: {}. Showing full content instead.\n\n{}",
+                                        "Warning: Failed to write large response to file: {}. Showing truncated content instead.\n\n{}",
                                         e,
-                                        text_content.text
+                                        head_tail_truncate(&text_content.text, TRUNCATION_THRESHOLD, HEAD_RATIO)
                                     );
                                     processed_contents.push(Content::text(warning));
                                 }
                             }
+                        } else if char_count > TRUNCATION_THRESHOLD {
+                            // Medium-large: head+tail truncate in-place
+                            let truncated = head_tail_truncate(
+                                &text_content.text,
+                                TRUNCATION_THRESHOLD,
+                                HEAD_RATIO,
+                            );
+                            processed_contents.push(Content::text(truncated));
                         } else {
-                            // Keep original content for smaller texts
                             processed_contents.push(content);
                         }
                     }
@@ -231,6 +245,44 @@ mod tests {
                 assert_eq!(err.message, "Test error");
             }
             _ => panic!("Expected execution error"),
+        }
+    }
+
+    #[test]
+    fn test_medium_text_gets_head_tail_truncated() {
+        // 150K chars — above TRUNCATION_THRESHOLD (100K) but below LARGE_TEXT_THRESHOLD (200K)
+        let medium_text = "x".repeat(150_000);
+        let content = Content::text(medium_text);
+
+        let response = Ok(CallToolResult::success(vec![content]));
+        let processed = process_tool_response(response).unwrap();
+
+        assert_eq!(processed.content.len(), 1);
+        if let Some(text_content) = processed.content[0].as_text() {
+            assert!(text_content.text.contains("characters truncated"));
+            // Should be significantly smaller than the original
+            assert!(text_content.text.chars().count() < 150_000);
+            // Should start with 'x's (head) and end with 'x's (tail)
+            assert!(text_content.text.starts_with("xxxx"));
+            assert!(text_content.text.ends_with("xxxx"));
+        } else {
+            panic!("Expected text content");
+        }
+    }
+
+    #[test]
+    fn test_exactly_at_truncation_threshold_passes_through() {
+        let exact_text = "y".repeat(TRUNCATION_THRESHOLD);
+        let content = Content::text(exact_text.clone());
+
+        let response = Ok(CallToolResult::success(vec![content]));
+        let processed = process_tool_response(response).unwrap();
+
+        assert_eq!(processed.content.len(), 1);
+        if let Some(text_content) = processed.content[0].as_text() {
+            assert_eq!(text_content.text, exact_text);
+        } else {
+            panic!("Expected text content");
         }
     }
 }
