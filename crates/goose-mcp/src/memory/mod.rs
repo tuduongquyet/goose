@@ -156,7 +156,8 @@ impl MemoryServer {
         let mut updated_instructions = instructions;
 
         updated_instructions.push_str("\n\n**Here are the user's currently saved memories:**\n");
-        updated_instructions.push_str("Keep this information in mind. Do not bring up memories unless relevant.\n");
+        updated_instructions
+            .push_str("Keep this information in mind. Do not bring up memories unless relevant.\n");
 
         if let Ok(mut global_memories) = retrieved_global_memories {
             // Render user_profile first with its own budget
@@ -907,7 +908,10 @@ mod tests {
                 .remember(
                     "ctx",
                     USER_PROFILE_CATEGORY,
-                    &format!("Preference {}: this is a moderately long preference entry number {}", i, i),
+                    &format!(
+                        "Preference {}: this is a moderately long preference entry number {}",
+                        i, i
+                    ),
                     &[],
                     true,
                     None,
@@ -954,8 +958,12 @@ mod tests {
         };
 
         // Write two entries
-        router.remember("ctx", "prefs", "editor: vim", &[], true, None).unwrap();
-        router.remember("ctx", "prefs", "shell: bash", &[], true, None).unwrap();
+        router
+            .remember("ctx", "prefs", "editor: vim", &[], true, None)
+            .unwrap();
+        router
+            .remember("ctx", "prefs", "shell: bash", &[], true, None)
+            .unwrap();
 
         // Read the file and do a manual replace (simulating replace_memory logic)
         let file_path = router.get_memory_file("prefs", true, None);

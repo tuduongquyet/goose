@@ -147,11 +147,7 @@ impl AcpTools {
             Ok(content) => {
                 if content.len() > MAX_FILE_READ_CHARS {
                     let line_count = content.lines().count();
-                    let preview: String = content
-                        .lines()
-                        .take(50)
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                    let preview: String = content.lines().take(50).collect::<Vec<_>>().join("\n");
                     let msg = format!(
                         "File is too large to display in full ({} characters, {line_count} lines). \
                          Use the 'line' and 'limit' parameters to read specific sections of the file.\n\n\
