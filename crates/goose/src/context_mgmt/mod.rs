@@ -1,3 +1,4 @@
+use crate::agents::extension_manager::ExtensionManager;
 use crate::conversation::message::{ActionRequiredData, MessageMetadata};
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{merge_consecutive_messages, Conversation};
@@ -67,8 +68,29 @@ pub async fn compact_messages(
     session_id: &str,
     conversation: &Conversation,
     manual_compact: bool,
+    extension_manager: Option<&ExtensionManager>,
+    working_dir: Option<&std::path::Path>,
 ) -> Result<(Conversation, ProviderUsage)> {
     info!("Performing message compaction");
+
+    // Pre-compaction memory flush: give the model one chance to save
+    // memories before context is summarized away
+    if let (Some(ext_mgr), Some(wd)) = (extension_manager, working_dir) {
+        if let Err(e) = crate::agents::knowledge_review::flush_memories_before_compaction(
+            provider,
+            ext_mgr,
+            conversation,
+            session_id,
+            wd,
+        )
+        .await
+        {
+            warn!(
+                "Pre-compaction memory flush failed (continuing with compaction): {}",
+                e
+            );
+        }
+    }
 
     let messages = conversation.messages();
 
@@ -679,10 +701,16 @@ mod tests {
         ];
 
         let conversation = Conversation::new_unvalidated(basic_conversation);
-        let (compacted_conversation, _usage) =
-            compact_messages(&provider, "test-session-id", &conversation, false)
-                .await
-                .unwrap();
+        let (compacted_conversation, _usage) = compact_messages(
+            &provider,
+            "test-session-id",
+            &conversation,
+            false,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
 
         let agent_conversation = compacted_conversation.agent_visible_messages();
 
@@ -712,7 +740,15 @@ mod tests {
         }
 
         let conversation = Conversation::new_unvalidated(messages);
-        let result = compact_messages(&provider, "test-session-id", &conversation, false).await;
+        let result = compact_messages(
+            &provider,
+            "test-session-id",
+            &conversation,
+            false,
+            None,
+            None,
+        )
+        .await;
 
         assert!(
             result.is_ok(),

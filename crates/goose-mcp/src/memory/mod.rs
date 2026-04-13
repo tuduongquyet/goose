@@ -339,7 +339,10 @@ impl MemoryServer {
                     return Ok(CallToolResult::error(vec![Content::text(format!(
                         "Memory at {}/{} chars. Adding this entry ({} chars) would exceed the limit. Replace or remove existing entries first.\n\nCurrent entries:\n{}",
                         current, budget, content.len(),
-                        entries.iter().enumerate().map(|(i, e)| format!("  {}. {}", i + 1, if e.len() > 80 { format!("{}...", &e[..77]) } else { e.clone() })).collect::<Vec<_>>().join("\n")
+                        entries.iter().enumerate().map(|(i, e)| {
+                            let preview: String = e.chars().take(77).collect();
+                            if e.len() > 80 { format!("  {}. {}...", i + 1, preview) } else { format!("  {}. {}", i + 1, e) }
+                        }).collect::<Vec<_>>().join("\n")
                     ))]));
                 }
 
@@ -400,7 +403,8 @@ impl MemoryServer {
                             .map(|&i| {
                                 let e = &entries[i];
                                 if e.len() > 80 {
-                                    format!("{}...", &e[..77])
+                                    let preview: String = e.chars().take(77).collect();
+                                    format!("{}...", preview)
                                 } else {
                                     e.clone()
                                 }

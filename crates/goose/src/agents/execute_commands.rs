@@ -101,6 +101,8 @@ impl Agent {
             session_id,
             &conversation,
             true, // is_manual_compact
+            Some(&self.extension_manager),
+            Some(std::path::Path::new(&session.working_dir)),
         )
         .await?;
 

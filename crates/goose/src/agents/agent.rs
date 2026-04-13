@@ -1139,8 +1139,9 @@ impl Agent {
                     &session_config.id,
                     &conversation_to_compact,
                     false,
-                )
-                .await
+                    Some(&self.extension_manager),
+                    Some(std::path::Path::new(&session.working_dir)),
+                )                .await
                 {
                     Ok((compacted_conversation, summarization_usage)) => {
                         session_manager.replace_conversation(&session_config.id, &compacted_conversation).await?;
@@ -1613,6 +1614,8 @@ impl Agent {
                                 &session_config.id,
                                 &conversation,
                                 false,
+                                Some(&self.extension_manager),
+                                Some(&working_dir),
                             )
                             .await
                             {
@@ -1801,6 +1804,19 @@ impl Agent {
 
             if !last_assistant_text.is_empty() {
                 tracing::info!(target: "goose::agents::agent", trace_output = last_assistant_text.as_str());
+            }
+
+            // Spawn background memory review if enough turns have passed
+            if turns_taken >= super::knowledge_review::DEFAULT_MEMORY_REVIEW_INTERVAL {
+                if let Ok(provider) = self.provider().await {
+                    super::knowledge_review::spawn_background_review(
+                        provider,
+                        Arc::clone(&self.extension_manager),
+                        conversation.clone(),
+                        session_config.id.clone(),
+                        working_dir.clone(),
+                    );
+                }
             }
         }.instrument(reply_stream_span));
         Ok(inner)
