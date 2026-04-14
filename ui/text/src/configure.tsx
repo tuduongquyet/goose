@@ -23,6 +23,8 @@ type Phase =
   | "saving"
   | "error";
 
+export type ConfigureIntent = "provider" | "model";
+
 interface ConfigureProps {
   client: GooseClient;
   sessionId: string;
@@ -30,6 +32,7 @@ interface ConfigureProps {
   height: number;
   onComplete: () => void;
   onCancel: () => void;
+  initialIntent?: ConfigureIntent;
 }
 
 interface ModelSelectorProps {
