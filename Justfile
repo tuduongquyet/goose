@@ -4,7 +4,7 @@
 default:
   @just --list
 
-build-dev:
+build-debug:
     cargo build -p goose-cli --bin goose
 
 # Run all style checks and formatting (precommit validation)

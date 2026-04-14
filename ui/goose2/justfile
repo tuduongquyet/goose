@@ -68,7 +68,7 @@ test-e2e-all:
 # ── Run ──────────────────────────────────────────────────────
 
 # Start the desktop app in dev mode
-dev: build-dev
+dev: build-debug
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -106,7 +106,7 @@ dev: build-dev
     pnpm tauri dev --features app-test-driver --config "$TAURI_CONFIG"
 
 # Start the desktop app with dev config
-dev-debug: build-dev
+dev-debug: build-debug
     #!/usr/bin/env bash
     set -euo pipefail
 
