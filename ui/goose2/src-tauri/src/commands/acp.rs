@@ -7,6 +7,7 @@ use crate::services::acp::{
     make_composite_key, search_sessions_via_exports, AcpRunningSession, AcpService, AcpSessionInfo,
     AcpSessionRegistry, GooseAcpManager, SessionSearchResult,
 };
+use crate::services::goose_paths::goose_artifacts_dir;
 
 const DEPRECATED_PROVIDER_IDS: &[&str] = &["claude-code", "codex", "gemini-cli"];
 
@@ -20,13 +21,6 @@ pub struct AcpProviderResponse {
 
 fn should_include_provider(provider_id: &str) -> bool {
     !DEPRECATED_PROVIDER_IDS.contains(&provider_id)
-}
-
-fn default_artifacts_working_dir() -> PathBuf {
-    if let Some(home_dir) = dirs::home_dir() {
-        return home_dir.join(".goose").join("artifacts");
-    }
-    PathBuf::from("/tmp").join(".goose").join("artifacts")
 }
 
 fn expand_home_dir(path: PathBuf) -> PathBuf {
@@ -56,7 +50,7 @@ fn resolve_working_dir(
         .map(|dir| dir.trim().to_string())
         .filter(|dir| !dir.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(default_artifacts_working_dir);
+        .unwrap_or_else(goose_artifacts_dir);
     let working_dir = expand_home_dir(working_dir);
 
     let working_dir = if working_dir.is_relative() {

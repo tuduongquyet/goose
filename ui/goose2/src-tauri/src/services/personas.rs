@@ -1,6 +1,9 @@
 use crate::types::agents::{
     builtin_personas, Avatar, CreatePersonaRequest, Persona, UpdatePersonaRequest,
 };
+use crate::services::goose_paths::{
+    goose_agents_dir, goose_avatars_dir, goose_personas_path,
+};
 use log::warn;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -20,7 +23,7 @@ struct MarkdownFrontmatter {
 
 impl PersonaStore {
     pub fn new() -> Self {
-        let store_path = Self::store_path();
+        let store_path = goose_personas_path();
         let stored = Self::load_from_disk(&store_path);
         let markdown = Self::load_markdown_personas();
         let merged = Self::merge_all(stored, markdown);
@@ -28,19 +31,6 @@ impl PersonaStore {
             personas: Mutex::new(merged),
             store_path,
         }
-    }
-
-    fn store_path() -> PathBuf {
-        let base = dirs::home_dir().expect("home dir");
-        base.join(".goose").join("personas.json")
-    }
-
-    /// Path to the avatars directory (~/.goose/avatars/).
-    pub fn avatars_dir() -> PathBuf {
-        dirs::home_dir()
-            .expect("home dir")
-            .join(".goose")
-            .join("avatars")
     }
 
     fn load_from_disk(path: &PathBuf) -> Vec<Persona> {
@@ -86,17 +76,9 @@ impl PersonaStore {
         result
     }
 
-    /// Directory containing markdown persona files.
-    fn agents_dir() -> PathBuf {
-        dirs::home_dir()
-            .expect("home dir")
-            .join(".goose")
-            .join("agents")
-    }
-
     /// Scan `~/.goose/agents/*.md` and parse each into a Persona.
     fn load_markdown_personas() -> Vec<Persona> {
-        let dir = Self::agents_dir();
+        let dir = goose_agents_dir();
         if !dir.is_dir() {
             return Vec::new();
         }
@@ -309,7 +291,7 @@ impl PersonaStore {
 
         // Clean up local avatar file if present
         if let Some(Avatar::Local(filename)) = &persona.avatar {
-            let path = Self::avatars_dir().join(filename);
+            let path = goose_avatars_dir().join(filename);
             let _ = std::fs::remove_file(path);
         }
 
@@ -321,7 +303,7 @@ impl PersonaStore {
     /// Copy an avatar image from a source path to ~/.goose/avatars/{persona_id}.{ext}.
     /// Returns the filename (not full path).
     pub fn save_avatar_from_path(persona_id: &str, source_path: &str) -> Result<String, String> {
-        let avatars_dir = Self::avatars_dir();
+        let avatars_dir = goose_avatars_dir();
         std::fs::create_dir_all(&avatars_dir)
             .map_err(|e| format!("Failed to create avatars directory: {}", e))?;
 
@@ -362,7 +344,7 @@ impl PersonaStore {
         bytes: &[u8],
         extension: &str,
     ) -> Result<String, String> {
-        let avatars_dir = Self::avatars_dir();
+        let avatars_dir = goose_avatars_dir();
         std::fs::create_dir_all(&avatars_dir)
             .map_err(|e| format!("Failed to create avatars directory: {}", e))?;
 
@@ -391,7 +373,7 @@ impl PersonaStore {
     /// Delete avatar file for a persona.
     #[allow(dead_code)]
     pub fn delete_avatar_file(filename: &str) {
-        let path = Self::avatars_dir().join(filename);
+        let path = goose_avatars_dir().join(filename);
         let _ = std::fs::remove_file(path);
     }
 }

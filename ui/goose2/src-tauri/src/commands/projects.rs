@@ -2,10 +2,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-fn projects_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    Ok(home.join(".goose").join("projects"))
-}
+use crate::services::goose_paths::goose_projects_dir;
 
 fn generate_id() -> String {
     use std::collections::hash_map::DefaultHasher;
@@ -62,7 +59,7 @@ fn slugify(name: &str) -> String {
 /// Scan all project directories and find the one whose project.json has the given id.
 /// Returns (dir_path, ProjectInfo).
 fn find_project_by_id(id: &str) -> Result<(PathBuf, StoredProjectInfo), String> {
-    let base = projects_dir()?;
+    let base = goose_projects_dir();
     if !base.exists() {
         return Err(format!("Project with id \"{}\" not found", id));
     }
@@ -195,7 +192,7 @@ fn project_info_from_stored(project_dir: &Path, stored: StoredProjectInfo) -> Pr
 
 #[tauri::command]
 pub fn list_projects() -> Result<Vec<ProjectInfo>, String> {
-    let dir = projects_dir()?;
+    let dir = goose_projects_dir();
 
     if !dir.exists() {
         return Ok(vec![]);
@@ -233,7 +230,7 @@ pub fn list_projects() -> Result<Vec<ProjectInfo>, String> {
 
 #[tauri::command]
 pub fn list_archived_projects() -> Result<Vec<ProjectInfo>, String> {
-    let dir = projects_dir()?;
+    let dir = goose_projects_dir();
     if !dir.exists() {
         return Ok(vec![]);
     }
@@ -279,7 +276,7 @@ pub fn create_project(
         return Err("Project name must not be empty".to_string());
     }
 
-    let base = projects_dir()?;
+    let base = goose_projects_dir();
     let slug = slugify(&name);
 
     // Determine final directory name, avoiding collisions
@@ -392,7 +389,7 @@ pub fn get_project(id: String) -> Result<ProjectInfo, String> {
 
 #[tauri::command]
 pub fn archive_project(id: String) -> Result<(), String> {
-    let base = projects_dir()?;
+    let base = goose_projects_dir();
     if !base.exists() {
         return Err("Projects directory not found".to_string());
     }
@@ -425,7 +422,7 @@ pub fn archive_project(id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn restore_project(id: String) -> Result<(), String> {
-    let base = projects_dir()?;
+    let base = goose_projects_dir();
     if !base.exists() {
         return Err("Projects directory not found".to_string());
     }

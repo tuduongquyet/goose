@@ -6,6 +6,8 @@ use tokio::process::{Child, Command};
 use tokio::sync::OnceCell;
 use tokio_tungstenite::connect_async;
 
+use crate::services::goose_paths::goose_artifacts_dir;
+
 const GOOSE_SERVE_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const GOOSE_SERVE_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(100);
 const LOCALHOST: &str = "127.0.0.1";
@@ -61,7 +63,7 @@ impl GooseServeProcess {
 
         // Use a stable working directory for the long-lived server process.
         // Individual sessions will set their own cwd via the ACP protocol.
-        let working_dir = default_serve_working_dir();
+        let working_dir = goose_artifacts_dir();
         std::fs::create_dir_all(&working_dir).map_err(|e| {
             format!(
                 "Failed to create goose serve working directory {}: {e}",
@@ -145,13 +147,6 @@ async fn wait_for_server_ready(ws_url: &str, child: &mut Child) -> Result<(), St
             }
         }
     }
-}
-
-fn default_serve_working_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".goose")
-        .join("artifacts")
 }
 
 // ---------------------------------------------------------------------------

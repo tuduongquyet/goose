@@ -11,6 +11,10 @@ case "$mode" in
 esac
 
 profile="${GOOSE2_PROFILE:-}"
+if [[ -n "$profile" && -z "${GOOSE_PATH_ROOT:-}" ]]; then
+  export GOOSE_PATH_ROOT="${TMPDIR:-/tmp}goose2-${profile}"
+fi
+
 port_key="$(pwd)::${profile:-default}"
 vite_port=$(
   PORT_KEY="$port_key" python3 -c \

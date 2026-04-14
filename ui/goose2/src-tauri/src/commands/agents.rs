@@ -1,3 +1,4 @@
+use crate::services::goose_paths::goose_avatars_dir;
 use crate::services::personas::PersonaStore;
 use crate::types::agents::*;
 use serde::{Deserialize, Serialize};
@@ -56,7 +57,7 @@ pub fn save_persona_avatar_bytes(
 /// Returns the absolute path to the avatars directory (~/.goose/avatars/).
 #[tauri::command]
 pub fn get_avatars_dir() -> String {
-    PersonaStore::avatars_dir().to_string_lossy().to_string()
+    goose_avatars_dir().to_string_lossy().to_string()
 }
 
 // --- Sprout-compatible persona import/export ---
