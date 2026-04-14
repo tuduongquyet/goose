@@ -148,8 +148,13 @@ pub async fn compact_messages(
 
     let messages_to_compact = messages.as_slice();
 
-    let (summary_message, summarization_usage) =
-        do_compact(provider, session_id, messages_to_compact).await?;
+    let (summary_message, summarization_usage) = do_compact(
+        provider,
+        session_id,
+        messages_to_compact,
+        extension_manager.is_some(),
+    )
+    .await?;
 
     // Create the final message list with updated visibility metadata:
     // 1. Original messages become user_visible but not agent_visible
@@ -305,6 +310,7 @@ async fn do_compact(
     provider: &dyn Provider,
     session_id: &str,
     messages: &[Message],
+    prune_tool_results: bool,
 ) -> Result<(Message, ProviderUsage), anyhow::Error> {
     let agent_visible_messages: Vec<Message> = messages
         .iter()
@@ -312,10 +318,11 @@ async fn do_compact(
         .map(|msg| msg.agent_visible_content())
         .collect();
 
-    // Proactive tool result pruning: replace old tool results >200 chars with stubs
-    // BEFORE sending to the LLM summarizer. This is free (no API cost) and dramatically
-    // reduces what the summarizer has to process. Protects the most recent 20 messages.
-    let pruned_messages: Vec<Message> = {
+    // Proactive tool result pruning (only when adaptive memory is active):
+    // Replace old tool results >200 chars with stubs BEFORE sending to the LLM
+    // summarizer. This is free (no API cost) and dramatically reduces what the
+    // summarizer has to process. Protects the most recent 20 messages.
+    let pruned_messages: Vec<Message> = if prune_tool_results {
         let protect_tail = 20.min(agent_visible_messages.len());
         let prune_boundary = agent_visible_messages.len().saturating_sub(protect_tail);
         agent_visible_messages
@@ -351,6 +358,8 @@ async fn do_compact(
                 }
             })
             .collect()
+    } else {
+        agent_visible_messages.to_vec()
     };
 
     // Try progressively removing more tool response messages from the middle to reduce context length
