@@ -2,11 +2,11 @@
 
 ## Objective
 
-Replace all `invoke()` calls in `src/shared/api/acp.ts` with calls to the new TypeScript ACP session manager (Step 05) and search module (Step 06). Keep the same public API signatures so consumers don't need to change.
+Replace all `invoke()` calls in `src/shared/api/acp.ts` with calls to the TypeScript ACP session manager (Step 05) and search module (Step 06). Keep the same public API signatures so consumers don't need to change.
 
 ## Why
 
-`src/shared/api/acp.ts` is the single import point for all ACP operations in the frontend. Currently every function calls `invoke("acp_*")` which goes through Tauri IPC → Rust → WebSocket → goose serve. After this step, they call the TypeScript session manager which goes directly through WebSocket → goose serve.
+`src/shared/api/acp.ts` is the single import point for all ACP operations in the frontend. Currently every function calls `invoke("acp_*")`, which goes through Tauri IPC → Rust → WebSocket → goose serve. After this step, they call the TypeScript session manager, which goes directly through WebSocket → goose serve.
 
 ## Changes
 
@@ -172,17 +172,14 @@ export async function acpCancelSession(
 }
 ```
 
-### Keep the interface types
+### Interface types
 
-The `AcpSendMessageOptions`, `AcpPrepareSessionOptions`, `AcpSessionInfo`, `AcpSessionSearchResult`, `AcpProvider` interfaces should remain exported from this file (or re-exported from the session manager). Consumers import them from `@/shared/api/acp`.
-
-If the types are now defined in `acpSessionManager.ts` or `sessionContentSearch.ts`, re-export them:
+`AcpSendMessageOptions` and `AcpPrepareSessionOptions` remain defined in this file since they are specific to this API surface. Types originating from the session manager and search module are re-exported:
 
 ```typescript
 export type { AcpProvider, AcpSessionInfo } from "./acpSessionManager";
 export type { SessionSearchResult as AcpSessionSearchResult } from "@/features/sessions/lib/sessionContentSearch";
 
-// Keep these interfaces here since they're specific to this API surface
 export interface AcpSendMessageOptions {
   systemPrompt?: string;
   workingDir?: string;
@@ -197,7 +194,7 @@ export interface AcpPrepareSessionOptions {
 }
 ```
 
-### Update `src/shared/api/index.ts`
+### `src/shared/api/index.ts`
 
 No changes needed — it already re-exports from `./acp`:
 
@@ -205,9 +202,9 @@ No changes needed — it already re-exports from `./acp`:
 export * from "./acp";
 ```
 
-## Consumers That Import from `@/shared/api/acp`
+## Consumers
 
-Verify these files still work without changes (they should, since the public API is unchanged):
+These files import from `@/shared/api/acp` and require no changes since the public API is unchanged:
 
 | File | Imports Used |
 |------|-------------|
@@ -220,14 +217,14 @@ Verify these files still work without changes (they should, since the public API
 
 ## Remove `invoke` Import
 
-The file should no longer import from `@tauri-apps/api/core` since all `invoke()` calls are replaced.
+The file no longer imports from `@tauri-apps/api/core`. Other files (agents, git, system, etc.) still use `invoke()` for non-ACP commands.
 
 ## Verification
 
-1. `pnpm typecheck` passes — all consumers still type-check against the same API.
+1. `pnpm typecheck` passes — all consumers type-check against the same API.
 2. `pnpm check` passes.
-3. `pnpm test` passes — existing tests that mock `invoke()` may need updating. Check `src/features/chat/hooks/__tests__/useAcpStream.test.ts` and `src/features/chat/hooks/__tests__/useChat.test.ts`.
-4. Manual testing: start the app, verify sessions load, messages send, search works.
+3. `pnpm test` passes — existing tests that mock `invoke()` need updating (check `src/features/chat/hooks/__tests__/useAcpStream.test.ts` and `src/features/chat/hooks/__tests__/useChat.test.ts`).
+4. Manual testing: start the app, confirm sessions load, messages send, and search works.
 
 ## Files Modified
 
@@ -242,7 +239,6 @@ The file should no longer import from `@tauri-apps/api/core` since all `invoke()
 
 ## Notes
 
-- This is the "flip the switch" step. After this, the frontend no longer calls any `acp_*` Tauri commands (except `get_goose_serve_url` which is called by `acpConnection.ts`).
-- The old Rust ACP commands still exist and are registered but are no longer called. They'll be removed in Step 09.
-- If you want a gradual rollout, you could add a feature flag that switches between the old `invoke()` path and the new direct path. But since the public API is identical, it's simpler to just swap.
-- The `@tauri-apps/api/core` import can be removed from this file entirely. Other files (agents, git, system, etc.) still use `invoke()` for non-ACP commands.
+- After this step, the frontend no longer calls any `acp_*` Tauri commands. The only remaining Tauri invoke for ACP infrastructure is `get_goose_serve_url`, called by `acpConnection.ts`.
+- The old Rust ACP commands still exist and are registered but are no longer called. They are removed in Step 09.
+- The `@tauri-apps/api/core` import is removed from this file entirely.

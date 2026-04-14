@@ -19,19 +19,6 @@ By handling notifications directly in TypeScript, we eliminate the Tauri event b
 
 This file implements the `AcpNotificationHandler` interface from Step 03 and contains all the logic currently split between `dispatcher.rs`, `writer.rs`, and `useAcpStream.ts`.
 
-```typescript
-/**
- * ACP notification handler — processes SessionNotification events from the
- * GooseClient and updates Zustand stores directly.
- *
- * This replaces:
- * - Rust: dispatcher.rs (SessionEventDispatcher, Client trait impl)
- * - Rust: writer.rs (TauriMessageWriter)
- * - TS: useAcpStream.ts (Tauri event listeners)
- * - TS: replayBuffer.ts (replay buffering)
- */
-```
-
 ## Key Data Structures to Port
 
 ### Session Route Map
@@ -42,22 +29,18 @@ The Rust `dispatcher.rs` maintains a `HashMap<String, SessionRoute>` that maps g
 interface SessionRoute {
   localSessionId: string;
   providerId: string | null;
-  /** When non-null, this session is actively streaming (live path). */
   activeMessageId: string | null;
-  /** When true, the session was cancelled mid-stream. */
   canceled: boolean;
-  /** Persona info for the active stream. */
   personaId: string | null;
   personaName: string | null;
 }
 
-// Module-level state
 const routes = new Map<string, SessionRoute>();
 ```
 
 ### Replay Buffer
 
-Port the replay buffer from `replayBuffer.ts` into this module (or keep it as a separate import). The key insight: during `loadSession`, notifications arrive for historical messages. These are buffered and flushed as a single `store.setMessages()` call when `replay_complete` is signaled.
+During `loadSession`, notifications arrive for historical messages. These are buffered and flushed as a single `store.setMessages()` call when `replay_complete` is signaled.
 
 ```typescript
 import type { Message, MessageContent, ToolRequestContent } from "@/shared/types/messages";
@@ -72,8 +55,6 @@ Port the `session_notification` method from `dispatcher.rs`. The Rust code handl
 ### 1. `SessionInfoUpdate`
 
 ```typescript
-// Rust: self.emit_session_info(...)
-// TS equivalent:
 function handleSessionInfoUpdate(localSessionId: string, info: SessionInfoUpdate): void {
   const session = useChatSessionStore.getState().getSession(localSessionId);
   if (info.title && !session?.userSetName) {
@@ -86,7 +67,7 @@ function handleSessionInfoUpdate(localSessionId: string, info: SessionInfoUpdate
 
 ### 2. `ConfigOptionUpdate` (model state)
 
-Port the `emit_model_state_from_options` logic. The Rust code extracts model options from `SessionConfigSelectOptions` (ungrouped or grouped) and emits them. In TS:
+Extract model options from `SessionConfigSelectOptions` (ungrouped or grouped) and update the session store:
 
 ```typescript
 import type { ModelOption } from "@/features/chat/types";
@@ -95,7 +76,7 @@ function extractModelOptionsFromConfigOptions(
   options: SessionConfigOption[],
 ): { currentModelId: string; currentModelName: string | null; availableModels: ModelOption[] } | null {
   const modelOption = options.find(
-    (opt) => opt.category === "model"  // SessionConfigOptionCategory::Model
+    (opt) => opt.category === "model"
   );
   if (!modelOption || modelOption.kind.type !== "select") return null;
 
@@ -131,7 +112,7 @@ function handleModelState(
   const session = sessionStore.getSession(localSessionId);
   const sessionProvider = session?.providerId;
   if (providerId && sessionProvider && providerId !== sessionProvider) {
-    return; // provider mismatch — ignore
+    return;
   }
   const modelName = modelState.currentModelName ?? modelState.currentModelId;
   sessionStore.setSessionModels(localSessionId, modelState.availableModels);
@@ -164,14 +145,13 @@ function handleReplayText(localSessionId: string, gooseSessionId: string, text: 
   if (!buffer) return;
   const route = routes.get(gooseSessionId);
   // Find or create the current assistant message in the buffer
-  // (same logic as useAcpStream's acp:text handler for loading sessions)
-  // ...
+  // and append the text chunk to it.
 }
 ```
 
 ### 4. `ToolCall` and `ToolCallUpdate`
 
-Port the tool call handling from both the live and replay paths. The live path calls:
+The live path calls:
 ```typescript
 store.appendToStreamingMessage(sessionId, toolRequest);
 ```
@@ -180,7 +160,7 @@ The replay path appends to the buffer message.
 
 ### 5. `UserMessageChunk` (replay only)
 
-During replay, user messages arrive as `UserMessageChunk`. Port the `extract_user_message` helper:
+During replay, user messages arrive as `UserMessageChunk`. Extract the inner content:
 
 ```typescript
 function extractUserMessage(raw: string): string {
@@ -218,13 +198,10 @@ export function finalizeMessage(localSessionId: string, messageId: string): void
   });
   store.setStreamingMessageId(localSessionId, null);
   store.setChatState(localSessionId, "idle");
-  // ... title update logic from useAcpStream's acp:done handler
 }
 ```
 
 ## Public API
-
-The module should export:
 
 ```typescript
 /** Register a goose session ID → local session ID binding. */
@@ -256,8 +233,6 @@ export function handleSessionNotification(notification: SessionNotification): Pr
 ```
 
 ## Porting Checklist
-
-Port each piece from the Rust source, mapping to the TS equivalent:
 
 | Rust Source | Rust Function/Method | TS Equivalent |
 |-------------|---------------------|---------------|
@@ -306,7 +281,7 @@ The notification handler calls these existing Zustand store methods (no changes 
 
 ## Registration
 
-During app initialization (Step 08), after creating the notification handler, register it with the connection manager:
+During app initialization (Step 08), register the handler with the connection manager:
 
 ```typescript
 import { setNotificationHandler } from "@/shared/api/acpConnection";
@@ -334,7 +309,7 @@ setNotificationHandler(notificationHandler);
 
 ## Notes
 
-- The Rust dispatcher uses `Arc<Mutex<HashMap>>` for thread safety. In single-threaded JS, a plain `Map` suffices.
-- The Rust dispatcher has a `replay_events` counter and `wait_for_replay_drain` for timing. In TS, we rely on the `replay_complete` signal from the backend (which the Rust code also emits after draining). The `loadSession` RPC resolves, then the backend sends remaining notifications, then sends `replay_complete`. We just need to handle the `replay_complete` notification to flush the buffer.
-- The `SessionNotification` type from `@agentclientprotocol/sdk` has a `sessionId` field (the goose session ID) and an `update` field with the variant. Check the SDK types for the exact shape — it may differ slightly from the Rust `agent_client_protocol::SessionNotification`.
-- The `shouldTrackStreamingEvent` guard from `useAcpStream.ts` should be ported — it prevents stale events from updating already-completed messages.
+- In single-threaded JS, a plain `Map` replaces the Rust `Arc<Mutex<HashMap>>` for route storage.
+- Replay buffering relies on the `replay_complete` signal from the backend. The `loadSession` RPC resolves, the backend sends remaining notifications, then sends `replay_complete`. The handler flushes the buffer at that point.
+- The `SessionNotification` type from `@agentclientprotocol/sdk` has a `sessionId` field (the goose session ID) and an `update` field with the variant. Check the SDK types for the exact shape.
+- Port the `shouldTrackStreamingEvent` guard from `useAcpStream.ts` — it prevents stale events from updating already-completed messages.

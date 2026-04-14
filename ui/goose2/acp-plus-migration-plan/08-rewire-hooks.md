@@ -2,7 +2,7 @@
 
 ## Objective
 
-Remove the `useAcpStream` hook (which listens to Tauri events) since the notification handler (Step 04) now updates stores directly. Update app initialization to set up the new ACP connection and notification handler. Update `useChat` and `AppShell` to use the new code paths.
+Remove the `useAcpStream` hook (which listens to Tauri events) since the notification handler (Step 04) now updates stores directly. Update app initialization to set up the new ACP connection and notification handler. Update `AppShell` to use the new code paths.
 
 ## Why
 
@@ -27,7 +27,7 @@ Remove the import and call:
 
 **File:** `src/app/hooks/useAppStartup.ts`
 
-Add ACP initialization as the first step. The notification handler must be registered before any ACP calls are made (so that session notifications from `loadSessions` are handled).
+Add ACP initialization as the first step. The notification handler must be registered before any ACP calls so that session notifications from `loadSessions` are handled.
 
 ```typescript
 import { useEffect } from "react";
@@ -108,27 +108,22 @@ export function useAppStartup() {
 }
 ```
 
-### 3. Update `AppShell.loadSessionMessages`
+### 3. `AppShell.loadSessionMessages` — no changes needed
 
 **File:** `src/app/AppShell.tsx`
 
-The `loadSessionMessages` callback currently dynamically imports `acpLoadSession` from `@/shared/api/acp`. This still works because Step 07 rewired that function. **No changes needed** to this callback — it already calls `acpLoadSession()` which now goes through the TS session manager.
-
-However, verify the import path is correct:
+The `loadSessionMessages` callback dynamically imports `acpLoadSession` from `@/shared/api/acp`. This still works because Step 07 rewired that function to go through the TS session manager.
 
 ```typescript
 const { acpLoadSession } = await import("@/shared/api/acp");
 ```
 
-This should still work since `acpLoadSession` is still exported from `@/shared/api/acp` (Step 07 kept the same exports).
-
-### 4. Update `useChat` — no changes needed
+### 4. `useChat` — no changes needed
 
 **File:** `src/features/chat/hooks/useChat.ts`
 
-This hook imports `acpSendMessage`, `acpCancelSession`, `acpPrepareSession`, `acpSetModel` from `@/shared/api/acp`. Since Step 07 kept the same API, **no changes are needed** in this file.
+This hook imports `acpSendMessage`, `acpCancelSession`, `acpPrepareSession`, `acpSetModel` from `@/shared/api/acp`. Step 07 kept the same API surface, so no changes are needed.
 
-Verify the imports still resolve:
 ```typescript
 import {
   acpSendMessage,
@@ -149,7 +144,6 @@ import { useEffect } from "react";
 
 useEffect(() => {
   const handleBeforeUnload = () => {
-    // Best-effort cancel all running sessions
     import("@/shared/api/acpSessionManager").then(({ cancelAll }) => {
       cancelAll();
     }).catch(() => {});
@@ -160,35 +154,34 @@ useEffect(() => {
 }, []);
 ```
 
-The Rust backend also cancels all sessions on `RunEvent::Exit` via `acp_registry_for_exit.cancel_all()`. After migration, the Rust registry is empty (no sessions are registered there), so the Rust cleanup is a no-op. The TS cleanup above replaces it.
+The Rust backend's `acp_registry_for_exit.cancel_all()` on `RunEvent::Exit` becomes a no-op after migration (no sessions are registered in the Rust registry). The TS cleanup above replaces it.
 
-### 6. Delete or deprecate old files
+### 6. Delete old files
 
-These files are no longer needed after this step:
+These files are no longer needed:
 
-**Delete:**
 - `src/features/chat/hooks/useAcpStream.ts` — replaced by `acpNotificationHandler.ts`
-- `src/features/chat/hooks/acpStreamTypes.ts` — types are now in the notification handler or imported from the SDK
+- `src/features/chat/hooks/acpStreamTypes.ts` — types moved to the notification handler / SDK imports
 - `src/features/chat/hooks/replayBuffer.ts` — logic moved into the notification handler
-
-**Keep but verify:**
-- `src/features/chat/hooks/useSSE.ts` — check if anything else uses it. If it was only used by `useAcpStream`, delete it.
+- `src/features/chat/hooks/useSSE.ts` — only consumer was `useAcpStream`
 
 ### 7. Update test files
 
-**Files to update or delete:**
-- `src/features/chat/hooks/__tests__/useAcpStream.test.ts` — **Delete** (the hook no longer exists)
-- `src/features/chat/hooks/__tests__/useChat.test.ts` — **Update** if it mocks `invoke()` for ACP commands. The mocks should now target the session manager functions instead.
+**Delete:**
+- `src/features/chat/hooks/__tests__/useAcpStream.test.ts` — the hook no longer exists
 
-For `useChat.test.ts`, if it currently mocks like:
+**Update:**
+- `src/features/chat/hooks/__tests__/useChat.test.ts` — mocks should target the session manager functions instead of `invoke()`.
+
+Replace any `invoke()`-level mocks:
+
 ```typescript
+// Before
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
-```
 
-It should instead mock:
-```typescript
+// After
 vi.mock("@/shared/api/acp", () => ({
   acpSendMessage: vi.fn().mockResolvedValue(undefined),
   acpPrepareSession: vi.fn().mockResolvedValue(undefined),
@@ -197,20 +190,18 @@ vi.mock("@/shared/api/acp", () => ({
 }));
 ```
 
-This may already be the case if the tests mock at the `@/shared/api/acp` level rather than `invoke()` directly.
-
 ### 8. Remove Tauri event listener cleanup
 
-The `useAcpStream` hook registered listeners for `acp:text`, `acp:done`, `acp:tool_call`, `acp:tool_title`, `acp:tool_result`, `acp:message_created`, `acp:session_info`, `acp:session_bound`, `acp:model_state`, `acp:usage_update`, `acp:replay_complete`, `acp:replay_user_message`. These are all gone now.
+The `useAcpStream` hook registered listeners for `acp:text`, `acp:done`, `acp:tool_call`, `acp:tool_title`, `acp:tool_result`, `acp:message_created`, `acp:session_info`, `acp:session_bound`, `acp:model_state`, `acp:usage_update`, `acp:replay_complete`, `acp:replay_user_message`. All of these are gone now.
 
-No other code should be listening to these events. Verify with a search:
+Confirm no other code listens to these events:
 
 ```bash
 cd ui/goose2/src
 rg "acp:" --include="*.ts" --include="*.tsx" | grep -v "__tests__" | grep -v "node_modules"
 ```
 
-After this step, the only `acp:` references should be in test files (which should be updated/deleted) and possibly in the notification handler (which doesn't use Tauri events).
+After this step, the only `acp:` references should be in test files (updated/deleted above).
 
 ## Verification
 
@@ -243,6 +234,7 @@ After this step, the only `acp:` references should be in test files (which shoul
 | `src/features/chat/hooks/useAcpStream.ts` | Replaced by `acpNotificationHandler.ts` |
 | `src/features/chat/hooks/acpStreamTypes.ts` | Types moved to notification handler |
 | `src/features/chat/hooks/replayBuffer.ts` | Logic moved to notification handler |
+| `src/features/chat/hooks/useSSE.ts` | Only consumer was `useAcpStream` |
 | `src/features/chat/hooks/__tests__/useAcpStream.test.ts` | Hook deleted |
 
 ## Dependencies
@@ -253,7 +245,7 @@ After this step, the only `acp:` references should be in test files (which shoul
 
 ## Notes
 
-- The `useAcpStream` hook was the **only** consumer of the `acp:*` Tauri events. Once it's removed, no frontend code listens to those events. The Rust backend will still emit them (until Step 09 removes the Rust code), but they'll go nowhere — this is harmless.
-- The `useChat` hook's `sendMessage` function currently sets `chatState` to `"thinking"` before calling `acpPrepareSession`, then to `"streaming"` before `acpSendMessage`. This flow is unchanged — the session manager handles the ACP calls, and the notification handler updates the store as streaming events arrive.
-- The `stopGeneration` function in `useChat` calls `acpCancelSession` — this now goes through the TS session manager which calls `client.cancel()` directly.
-- The `loadSessionMessages` callback in `AppShell` sets `store.setSessionLoading(sessionId, true)` before calling `acpLoadSession`. The notification handler's replay logic checks `loadingSessionIds` to decide whether to buffer. This flow is preserved — the notification handler reads from `useChatStore.getState().loadingSessionIds` just like `useAcpStream` did.
+- `useAcpStream` was the only consumer of the `acp:*` Tauri events. Once removed, no frontend code listens to those events. The Rust backend still emits them until Step 09 removes the Rust code, but they go nowhere — this is harmless.
+- The `useChat` hook's `sendMessage` function sets `chatState` to `"thinking"` before `acpPrepareSession`, then `"streaming"` before `acpSendMessage`. This flow is unchanged — the session manager handles the ACP calls, and the notification handler updates the store as streaming events arrive.
+- The `stopGeneration` function in `useChat` calls `acpCancelSession`, which now goes through the TS session manager calling `client.cancel()` directly.
+- The `loadSessionMessages` callback in `AppShell` sets `store.setSessionLoading(sessionId, true)` before calling `acpLoadSession`. The notification handler's replay logic checks `loadingSessionIds` to decide whether to buffer. This flow is preserved — the notification handler reads from `useChatStore.getState().loadingSessionIds` just as `useAcpStream` did.

@@ -21,37 +21,14 @@ This package is already used by `ui/desktop` (Electron) and `ui/text` (Ink TUI).
 
 **File:** `ui/goose2/package.json`
 
-Run from the `ui/goose2/` directory:
+goose2 has its own `pnpm-lock.yaml` and is not part of the `ui/pnpm-workspace.yaml` workspace. Use the published npm packages:
 
-```bash
-source ./bin/activate-hermit
-pnpm add @aaif/goose-acp @agentclientprotocol/sdk
-```
-
-If the packages are not published to npm yet or you want to use the local workspace version, use the workspace protocol instead. Check `ui/pnpm-workspace.yaml` to see if `ui/acp` is included in the workspace. If it is:
-
-```bash
-pnpm add @aaif/goose-acp@workspace:* @agentclientprotocol/sdk
-```
-
-If `ui/acp` is NOT in the pnpm workspace (goose2 has its own `pnpm-lock.yaml`), you have two options:
-
-**Option A — Link locally during development:**
-```bash
-cd ui/acp
-npm run build
-npm link
-
-cd ui/goose2
-pnpm link @aaif/goose-acp
-pnpm add @agentclientprotocol/sdk
-```
-
-**Option B — Use the published npm package:**
 ```bash
 cd ui/goose2
-pnpm add @aaif/goose-acp @agentclientprotocol/sdk
+pnpm add @aaif/goose-acp @agentclientprotocol/sdk@^0.14.1
 ```
+
+The `@aaif/goose-acp` package declares `@agentclientprotocol/sdk` as a peer dependency (`"*"`). Pin to `^0.14.1` to match the version used by `ui/acp/package.json`.
 
 ### 2. Verify the dependency resolves
 
@@ -59,7 +36,6 @@ After installation, verify the imports work:
 
 ```bash
 cd ui/goose2
-# Quick typecheck
 pnpm typecheck
 ```
 
@@ -119,16 +95,6 @@ import type {
 } from "@agentclientprotocol/sdk";
 ```
 
-### 4. Check `@agentclientprotocol/sdk` version compatibility
-
-The `@aaif/goose-acp` package declares `@agentclientprotocol/sdk` as a **peer dependency** (`"*"`). The Rust backend currently uses `agent-client-protocol = "0.10.4"`. The TypeScript SDK should be at a compatible version.
-
-Check `ui/acp/package.json` for the devDependency version — it currently shows `"@agentclientprotocol/sdk": "^0.14.1"`. Install the same or newer version:
-
-```bash
-pnpm add @agentclientprotocol/sdk@^0.14.1
-```
-
 ## Verification
 
 1. `pnpm typecheck` passes with no errors related to the new dependencies.
@@ -144,7 +110,6 @@ pnpm add @agentclientprotocol/sdk@^0.14.1
 
 ## Notes
 
-- The `@aaif/goose-acp` package exports `GooseClient` which wraps `ClientSideConnection` from `@agentclientprotocol/sdk`. It adds Goose-specific extension methods via `GooseExtClient`.
-- The package currently ships `createHttpStream` (HTTP+SSE transport). We will use **WebSocket** transport instead. The `GooseClient` constructor accepts any `Stream` (a `{ readable, writable }` pair of `ReadableStream<AnyMessage>` and `WritableStream<AnyMessage>`). In Step 03 we'll create a `createWebSocketStream` helper — either locally in goose2 or contributed to `@aaif/goose-acp`.
+- `GooseClient` wraps `ClientSideConnection` from `@agentclientprotocol/sdk` and adds Goose-specific extension methods via `GooseExtClient`.
+- The package ships `createHttpStream` (HTTP+SSE transport), but we will use **WebSocket** transport instead. `GooseClient` accepts any `Stream` (a `{ readable, writable }` pair of `ReadableStream<AnyMessage>` and `WritableStream<AnyMessage>`). In Step 03 we'll create a `createWebSocketStream` helper.
 - The `goose serve` WebSocket endpoint at `/acp` uses simple framing: each WS text frame is a single JSON-RPC message (no newline delimiters needed). This is the same transport the Rust Tauri backend already uses in `thread.rs`.
-- If we decide to add `createWebSocketStream` to `@aaif/goose-acp` itself (we control the package), it would be exported alongside `createHttpStream` and available to all consumers.

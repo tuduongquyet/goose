@@ -2,17 +2,17 @@
 
 ## Objective
 
-Port the session content search logic from `src-tauri/src/services/acp/search.rs` to TypeScript. This is pure text processing on exported JSON — no native access needed.
+Port the session content search logic to TypeScript. This is pure text processing on exported JSON and requires no native access.
 
 ## Why
 
-The Rust search code:
+The search code:
 1. Exports each session as JSON via the ACP `goose/session/export` extension method
 2. Parses the JSON to extract user/assistant/system messages
 3. Performs case-insensitive substring matching
 4. Builds snippets around the first match
 
-All of this is string processing that runs fine in JavaScript. Moving it to TypeScript eliminates the Rust→TS round-trip for each session export during search.
+All of this is string processing that runs fine in JavaScript. Moving it to TypeScript eliminates the native round-trip for each session export during search.
 
 ## New File
 
@@ -21,8 +21,6 @@ All of this is string processing that runs fine in JavaScript. Moving it to Type
 ```typescript
 /**
  * Search session message content via exported Goose sessions.
- *
- * Ported from src-tauri/src/services/acp/search.rs
  */
 import { exportSession } from "@/shared/api/acpSessionManager"; // from Step 05
 
@@ -38,11 +36,11 @@ export interface SessionSearchResult {
 }
 ```
 
-## Functions to Port
+## Functions
 
 ### 1. `searchSessionsViaExports`
 
-The top-level function that iterates over session IDs, exports each, and searches:
+Top-level function that iterates over session IDs, exports each, and searches:
 
 ```typescript
 export async function searchSessionsViaExports(
@@ -261,7 +259,7 @@ function extractSearchableBlockText(value: unknown, role: string | null): string
 }
 ```
 
-### 6. Helper functions
+### 6. Helper Functions
 
 ```typescript
 function normalizeRole(role: string | undefined): string | null {
@@ -315,15 +313,12 @@ function buildSnippet(text: string, query: string): string {
 }
 ```
 
-## Tests to Port
+## Tests
 
-Port the tests from `search.rs` `mod tests`:
+### `src/features/sessions/lib/__tests__/sessionContentSearch.test.ts`
 
 ```typescript
-// src/features/sessions/lib/__tests__/sessionContentSearch.test.ts
-
 import { describe, it, expect } from "vitest";
-// Import the internal functions (may need to export them for testing)
 
 describe("sessionContentSearch", () => {
   it("finds user and assistant text matches", () => { /* ... */ });
@@ -331,7 +326,6 @@ describe("sessionContentSearch", () => {
   it("skips tool and reasoning content", () => { /* ... */ });
   it("counts multiple matches in one session", () => { /* ... */ });
   it("builds trimmed snippets around first match", () => { /* ... */ });
-  // ... port all tests from search.rs
 });
 ```
 
@@ -343,7 +337,7 @@ The existing `useSessionSearch` hook calls `acpSearchSessions()` from `@/shared/
 
 1. `pnpm typecheck` passes.
 2. `pnpm check` passes.
-3. `pnpm test` — all ported search tests pass.
+3. `pnpm test` — all search tests pass.
 
 ## Files Created
 
@@ -358,6 +352,6 @@ The existing `useSessionSearch` hook calls `acpSearchSessions()` from `@/shared/
 
 ## Notes
 
-- The Rust `build_snippet` uses byte-level `floor_char_boundary` / `ceil_char_boundary` for UTF-8 safety. In JavaScript, `String.substring()` operates on UTF-16 code units and is already safe for slicing. The snippet boundaries may differ slightly from the Rust version for multi-byte characters, but this is cosmetic.
-- The Rust search is sequential (one session at a time). The TS version could parallelize with `Promise.all` for better performance, but sequential is simpler and matches the Rust behavior. Consider parallelizing later if search is slow.
-- The `exportSession` call goes through the ACP client to `goose serve`, which reads from its database. This is the same path as the Rust code — no change in data source.
+- In JavaScript, `String.substring()` operates on UTF-16 code units and is already safe for slicing. Snippet boundaries may differ slightly for multi-byte characters, but this is cosmetic.
+- The search is sequential (one session at a time). Parallelization via `Promise.all` is a future optimization if search latency becomes a problem.
+- The `exportSession` call goes through the ACP client to `goose serve`, which reads from its database. There is no change in data source.

@@ -2,13 +2,9 @@
 
 ## Objective
 
-This step is a roadmap for the long-term migration. Each subsystem currently handled by Rust Tauri commands will move behind `goose serve` ACP extension methods, callable from TypeScript via `client.extMethod("goose/<domain>/<action>", params)` or via generated `GooseExtClient` methods.
-
-**This step requires backend changes to the goose crate** — adding new ACP extension methods to `goose serve`. It cannot be done purely in the Tauri app.
+Migrate each remaining Rust Tauri subsystem behind `goose serve` ACP extension methods, callable from TypeScript via `client.goose.<method>()`. This requires backend changes to the goose crate — adding new ACP extension methods to `goose serve`.
 
 ## Current State After Phase A (Steps 01–09)
-
-After Phase A, the Rust Tauri backend still handles:
 
 | Module | Rust File(s) | Lines | Native Dependency |
 |--------|-------------|-------|-------------------|
@@ -27,11 +23,11 @@ After Phase A, the Rust Tauri backend still handles:
 
 ## Migration Pattern
 
-For each subsystem, the pattern is:
+For each subsystem:
 
-1. **Backend**: Add ACP extension methods to `goose serve` (in the `goose-acp` or `goose` crate)
+1. **Backend**: Add ACP extension methods to `goose serve` (in `goose-acp` or `goose` crate)
 2. **Schema**: Regenerate the ACP schema (`npm run build:schema` in `ui/acp/`)
-3. **Client**: The `GooseExtClient` auto-generates typed methods from the schema
+3. **Client**: `GooseExtClient` auto-generates typed methods from the schema
 4. **Frontend**: Replace `invoke("rust_command")` calls with `client.goose.<method>()` calls
 5. **Cleanup**: Delete the Rust Tauri command and service code
 
@@ -39,9 +35,9 @@ For each subsystem, the pattern is:
 
 ### B1: Config Management
 
-**Priority: High** — Config is needed for provider setup, which is part of the core onboarding flow.
+**Priority: High** — Config is needed for provider setup, part of the core onboarding flow.
 
-#### New `goose serve` Extension Methods
+#### Extension Methods
 
 | Method | Request | Response |
 |--------|---------|----------|
@@ -56,35 +52,35 @@ For each subsystem, the pattern is:
 | `goose/provider/fields` | `{ providerId: string }` | `{ fields: [{ key: string, value: string \| null, isSet: boolean, isSecret: boolean, required: boolean }] }` |
 | `goose/provider/deleteConfig` | `{ providerId: string }` | `{}` |
 
-#### Backend Implementation Notes
+#### Backend Notes
 
-- The goose binary already has config management internally (`goose configure` command). The extension methods expose the same logic over ACP.
-- Keyring access happens in the `goose serve` process (which runs natively), so there's no loss of capability.
-- The `provider_defs.rs` static definitions should move to the goose crate (or already exist there).
+- The goose binary already has config management internally (`goose configure`). The extension methods expose the same logic over ACP.
+- Keyring access happens in the `goose serve` process (which runs natively), so there is no loss of capability.
+- Move `provider_defs.rs` static definitions to the goose crate.
 
 #### Frontend Changes
 
-- Replace `invoke("get_provider_config")` → `client.goose.gooseProviderFields({ providerId })`
-- Replace `invoke("save_provider_field")` → `client.goose.gooseSecretSet({ key, value })` or `client.goose.gooseConfigSet({ key, value })`
-- Replace `invoke("delete_provider_config")` → `client.goose.gooseProviderDeleteConfig({ providerId })`
-- Replace `invoke("check_all_provider_status")` → `client.goose.gooseProviderStatusAll({})`
-- Replace `invoke("restart_app")` → keep in Rust (native window management)
+- `invoke("get_provider_config")` → `client.goose.gooseProviderFields({ providerId })`
+- `invoke("save_provider_field")` → `client.goose.gooseSecretSet({ key, value })` or `client.goose.gooseConfigSet({ key, value })`
+- `invoke("delete_provider_config")` → `client.goose.gooseProviderDeleteConfig({ providerId })`
+- `invoke("check_all_provider_status")` → `client.goose.gooseProviderStatusAll({})`
+- `invoke("restart_app")` — remains in Rust (native window management)
 
-#### Files Deleted After B1
+#### Files Deleted
 
 - `src-tauri/src/services/goose_config.rs`
 - `src-tauri/src/services/provider_defs.rs`
-- `src-tauri/src/commands/credentials.rs` (except `restart_app` which stays)
-- Remove `keyring` dependency from `Cargo.toml` (all 3 platform variants)
-- Remove `etcetera` dependency
+- `src-tauri/src/commands/credentials.rs` (except `restart_app`)
+- `keyring` dependency from `Cargo.toml` (all 3 platform variants)
+- `etcetera` dependency
 
 ---
 
 ### B2: Personas
 
-**Priority: Medium** — Personas are used in the chat flow but not on the critical path.
+**Priority: Medium** — Used in the chat flow but not on the critical path.
 
-#### New `goose serve` Extension Methods
+#### Extension Methods
 
 | Method | Request | Response |
 |--------|---------|----------|
@@ -98,13 +94,12 @@ For each subsystem, the pattern is:
 | `goose/personas/saveAvatar` | `{ personaId: string, bytes: number[], extension: string }` | `{ filename: string }` |
 | `goose/personas/avatarsDir` | `{}` | `{ path: string }` |
 
-#### Backend Implementation Notes
+#### Backend Notes
 
-- Persona storage (`~/.goose/personas.json`, `~/.goose/agents/*.md`) is file-based. The goose binary can read/write these.
-- Avatar handling (`~/.goose/avatars/`) is also file-based.
-- Builtin personas are currently defined in `types/builtin_personas.rs` — these should move to the goose crate.
+- Persona storage (`~/.goose/personas.json`, `~/.goose/agents/*.md`) and avatar handling (`~/.goose/avatars/`) are file-based. The goose binary can read/write these directly.
+- Move builtin persona definitions from `types/builtin_personas.rs` to the goose crate.
 
-#### Files Deleted After B2
+#### Files Deleted
 
 - `src-tauri/src/services/personas.rs`
 - `src-tauri/src/types/agents.rs`
@@ -117,9 +112,9 @@ For each subsystem, the pattern is:
 
 ### B3: Skills
 
-**Priority: Low** — Skills are a secondary feature.
+**Priority: Low**
 
-#### New `goose serve` Extension Methods
+#### Extension Methods
 
 | Method | Request | Response |
 |--------|---------|----------|
@@ -130,7 +125,7 @@ For each subsystem, the pattern is:
 | `goose/skills/export` | `{ name: string }` | `{ json: string, filename: string }` |
 | `goose/skills/import` | `{ fileBytes: number[], fileName: string }` | `{ skills: SkillInfo[] }` |
 
-#### Files Deleted After B3
+#### Files Deleted
 
 - `src-tauri/src/commands/skills.rs`
 
@@ -138,9 +133,9 @@ For each subsystem, the pattern is:
 
 ### B4: Projects
 
-**Priority: Low** — Projects are a secondary feature.
+**Priority: Low**
 
-#### New `goose serve` Extension Methods
+#### Extension Methods
 
 | Method | Request | Response |
 |--------|---------|----------|
@@ -153,7 +148,7 @@ For each subsystem, the pattern is:
 | `goose/projects/archive` | `{ id: string }` | `{}` |
 | `goose/projects/restore` | `{ id: string }` | `{}` |
 
-#### Files Deleted After B4
+#### Files Deleted
 
 - `src-tauri/src/commands/projects.rs`
 
@@ -163,7 +158,7 @@ For each subsystem, the pattern is:
 
 **Priority: Medium** — Git state is shown in the workspace widget and context panel.
 
-#### New `goose serve` Extension Methods
+#### Extension Methods
 
 | Method | Request | Response |
 |--------|---------|----------|
@@ -177,12 +172,12 @@ For each subsystem, the pattern is:
 | `goose/git/createBranch` | `{ path, name, baseBranch }` | `{}` |
 | `goose/git/createWorktree` | `{ path, name, branch, createBranch, baseBranch? }` | `CreatedWorktree` |
 
-#### Backend Implementation Notes
+#### Backend Notes
 
-- Git operations run shell commands (`git status`, `git switch`, etc.). The goose binary can run these the same way.
-- The `ignore` crate is used for `.gitignore`-aware file scanning in `list_files_for_mentions`. This could also move to goose serve.
+- Git operations run shell commands (`git status`, `git switch`, etc.). The goose binary runs these the same way.
+- The `ignore` crate for `.gitignore`-aware file scanning in `list_files_for_mentions` moves to goose serve as well.
 
-#### Files Deleted After B5
+#### Files Deleted
 
 - `src-tauri/src/commands/git.rs`
 - `src-tauri/src/commands/git_changes.rs`
@@ -191,23 +186,23 @@ For each subsystem, the pattern is:
 
 ### B6: Doctor
 
-**Priority: Low** — Doctor is a diagnostic tool, not on the critical path.
+**Priority: Low** — Diagnostic tool, not on the critical path.
 
-#### New `goose serve` Extension Methods
+#### Extension Methods
 
 | Method | Request | Response |
 |--------|---------|----------|
 | `goose/doctor/run` | `{}` | `DoctorReport` |
 | `goose/doctor/fix` | `{ checkId: string, fixType: string }` | `{}` |
 
-#### Backend Implementation Notes
+#### Backend Notes
 
-- The `doctor` crate already exists in the goose ecosystem. The extension methods just expose it over ACP.
+The `doctor` crate already exists in the goose ecosystem. The extension methods expose it over ACP.
 
-#### Files Deleted After B6
+#### Files Deleted
 
 - `src-tauri/src/commands/doctor.rs`
-- Remove `doctor` dependency from `Cargo.toml`
+- `doctor` dependency from `Cargo.toml`
 
 ---
 
@@ -215,33 +210,19 @@ For each subsystem, the pattern is:
 
 **Priority: Medium** — Needed for onboarding third-party agents and OAuth flows.
 
-This is the trickiest subsystem because it involves **interactive shell commands with streaming output**. The current Rust code spawns a child process and streams stdout/stderr lines as Tauri events (`agent-setup:output`, `model-setup:output`).
+This subsystem involves interactive shell commands with streaming output. The current Rust code spawns a child process and streams stdout/stderr lines as Tauri events (`agent-setup:output`, `model-setup:output`).
 
-#### Options
+#### Recommendation: Keep in Rust
 
-**Option A: ACP extension methods with streaming notifications**
-
-Add extension methods that return immediately but stream progress via `SessionNotification` events (or a new notification type). The frontend listens for these notifications the same way it listens for chat streaming.
-
-**Option B: Keep in Rust as the last native commands**
-
-These commands are inherently interactive (they open browsers for OAuth, wait for user input). They may be better suited to native handling. Keep them as the last remaining Tauri commands.
-
-**Option C: Move the logic into `goose serve` as a long-running task**
-
-The goose binary already handles `goose configure` (which is what `model_setup.rs` wraps). Expose a `goose/setup/authenticateProvider` extension method that runs the configure flow and streams output.
-
-#### Recommendation
-
-Start with **Option B** (keep in Rust) and migrate to Option A or C later. These commands are rarely called (only during onboarding) and the streaming output pattern would need a new ACP notification type.
+These commands remain as Tauri-native commands. They are inherently interactive (opening browsers for OAuth, waiting for user input), are rarely called (only during onboarding), and migrating them would require designing a new ACP streaming notification type. They stay as the last remaining Tauri commands.
 
 ---
 
 ### B8: System Utilities
 
-**Priority: Low** — These are helper functions, not core features.
+**Priority: Low**
 
-#### New `goose serve` Extension Methods
+#### Extension Methods
 
 | Method | Request | Response |
 |--------|---------|----------|
@@ -250,20 +231,20 @@ Start with **Option B** (keep in Rust) and migrate to Option A or C later. These
 | `goose/system/listDir` | `{ path: string }` | `{ entries: FileTreeEntry[] }` |
 | `goose/system/listFilesForMentions` | `{ roots: string[], maxResults?: number }` | `{ files: string[] }` |
 
-#### Special Case: `saveExportedSessionFile`
+#### Stays in Rust: `saveExportedSessionFile`
 
-This command uses `tauri_plugin_dialog` to show a native save dialog. This is inherently a Tauri/native operation — it cannot move to `goose serve`. **Keep this in Rust.**
+This command uses `tauri_plugin_dialog` to show a native save dialog. It cannot move to `goose serve`.
 
-#### Files Deleted After B8
+#### Files Deleted
 
-- `src-tauri/src/commands/system.rs` (except `save_exported_session_file` which stays)
-- Remove `ignore` dependency from `Cargo.toml`
+- `src-tauri/src/commands/system.rs` (except `save_exported_session_file`)
+- `ignore` dependency from `Cargo.toml`
 
 ---
 
-## End State After All Phase B Steps
+## End State After Phase B
 
-**Rust Tauri backend:**
+**Rust Tauri backend (~780 lines):**
 
 ```
 src-tauri/src/
@@ -273,8 +254,8 @@ src-tauri/src/
     mod.rs                  — 3 modules
     acp.rs                  — get_goose_serve_url (~15 lines)
     system.rs               — save_exported_session_file (~40 lines)
-    agent_setup.rs          — install/auth agents (~310 lines, if kept)
-    model_setup.rs          — model provider auth (~220 lines, if kept)
+    agent_setup.rs          — install/auth agents (~310 lines)
+    model_setup.rs          — model provider auth (~220 lines)
   services/
     mod.rs                  — 1 module
     acp/
@@ -282,9 +263,8 @@ src-tauri/src/
       goose_serve.rs        — GooseServeProcess (~150 lines)
 ```
 
-**Total: ~780 lines** if keeping agent/model setup, or **~250 lines** if those also move.
-
 **Cargo.toml dependencies (minimal):**
+
 ```toml
 tauri = "2"
 tauri-plugin-opener = "2"
@@ -298,28 +278,28 @@ dirs = "6"
 log = "0.4"
 ```
 
-## Migration Priority Summary
+## Migration Order
 
-| Step | Effort | Blocking On | Value | Recommended Order |
-|------|--------|-------------|-------|-------------------|
-| B1 (Config) | Medium | Backend ACP methods | High (removes keyring dep) | 1st |
-| B5 (Git) | Medium | Backend ACP methods | Medium | 2nd |
-| B2 (Personas) | Medium | Backend ACP methods | Medium | 3rd |
-| B3 (Skills) | Small | Backend ACP methods | Small | 4th |
-| B4 (Projects) | Small | Backend ACP methods | Small | 5th |
-| B6 (Doctor) | Small | Backend ACP methods | Small | 6th |
-| B8 (System utils) | Small | Backend ACP methods | Small | 7th |
-| B7 (Agent/Model setup) | Large | Streaming notification design | Medium | Last (or keep in Rust) |
+| Step | Effort | Value | Order |
+|------|--------|-------|-------|
+| B1 (Config) | Medium | High (removes keyring dep) | 1st |
+| B5 (Git) | Medium | Medium | 2nd |
+| B2 (Personas) | Medium | Medium | 3rd |
+| B3 (Skills) | Small | Small | 4th |
+| B4 (Projects) | Small | Small | 5th |
+| B6 (Doctor) | Small | Small | 6th |
+| B8 (System utils) | Small | Small | 7th |
+| B7 (Agent/Model setup) | — | — | Keep in Rust |
 
-## How to Propose Backend Changes
+All steps are blocked on implementing the corresponding backend ACP methods, except B7 which remains native.
 
-For each subsystem, the process is:
+## Workflow Per Subsystem
 
-1. **Design the ACP extension method schemas** in `crates/goose-acp/`
-2. **Implement the handlers** in the goose serve server
-3. **Regenerate the schema**: `cd ui/acp && npm run build:schema`
-4. **Rebuild the TS client**: `cd ui/acp && npm run build`
-5. **Update goose2**: use the new `client.goose.<method>()` calls
-6. **Delete the Rust Tauri code**
+1. Design the ACP extension method schemas in `crates/goose-acp/`
+2. Implement the handlers in the goose serve server
+3. Regenerate the schema: `cd ui/acp && npm run build:schema`
+4. Rebuild the TS client: `cd ui/acp && npm run build`
+5. Update goose2: use the new `client.goose.<method>()` calls
+6. Delete the Rust Tauri code
 
-Each subsystem can be migrated independently. The frontend can use a mix of `invoke()` (for not-yet-migrated subsystems) and `client.goose.*()` (for migrated ones) during the transition.
+Each subsystem migrates independently. The frontend can use a mix of `invoke()` (not-yet-migrated) and `client.goose.*()` (migrated) during the transition.

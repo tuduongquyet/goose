@@ -20,9 +20,7 @@ All ACP operations (send prompt, list sessions, export, etc.) need a shared, ini
 
 The `@agentclientprotocol/sdk` defines a `Stream` as `{ readable: ReadableStream<AnyMessage>, writable: WritableStream<AnyMessage> }`. The SDK ships `ndJsonStream` for stdio. The `@aaif/goose-acp` package ships `createHttpStream` for HTTP+SSE. Neither provides a WebSocket transport.
 
-We need a `createWebSocketStream` that bridges a browser `WebSocket` to the ACP `Stream` interface. The `goose serve` WebSocket protocol is simple: each WS text frame is a single JSON-RPC message (no newline delimiters).
-
-> **Alternative**: This helper could be contributed to `@aaif/goose-acp` so all consumers benefit. Since we control that package, we can do this at any time. For now, creating it locally in goose2 is the fastest path.
+We need a `createWebSocketStream` that bridges a browser `WebSocket` to the ACP `Stream` interface. The `goose serve` WebSocket protocol sends each WS text frame as a single JSON-RPC message (no newline delimiters).
 
 ```typescript
 /**
@@ -76,7 +74,6 @@ export function createWebSocketStream(wsUrl: string): Stream {
 
   ws.addEventListener("close", () => {
     closed = true;
-    // Wake any pending reader so it can see the stream is done.
     for (const waiter of waiters) waiter();
     waiters.length = 0;
   });
@@ -117,6 +114,10 @@ export function createWebSocketStream(wsUrl: string): Stream {
 ```
 
 ### 2. `src/shared/api/acpConnection.ts` — Singleton connection manager
+
+The module uses a promise-based singleton pattern: `clientPromise` ensures only one initialization runs at a time, `resolvedClient` caches the result for synchronous access, and if initialization fails, `clientPromise` resets so the next call retries. This mirrors the Rust `OnceCell<Arc<GooseAcpManager>>` pattern in `manager.rs`.
+
+The notification handler is registered separately (via `setNotificationHandler()` in Step 04) rather than passed at construction time. This avoids a circular dependency: `acpConnection.ts` creates the client, but `acpNotificationHandler.ts` both needs the client and must be registered with the connection.
 
 ```typescript
 /**
@@ -171,10 +172,6 @@ function createClientCallbacks(): () => Client {
     requestPermission: async (
       args: RequestPermissionRequest,
     ): Promise<RequestPermissionResponse> => {
-      // Auto-approve with the first available option, matching the Rust behavior
-      // in dispatcher.rs: RequestPermissionResponse::new(
-      //   RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id))
-      // )
       const optionId = args.options?.[0]?.optionId ?? "approve";
       return {
         outcome: {
@@ -204,8 +201,6 @@ function createClientCallbacks(): () => Client {
  * This is idempotent — calling it multiple times returns the same client.
  */
 async function initializeConnection(): Promise<GooseClient> {
-  // Get the goose serve WebSocket URL from the Rust backend.
-  // This blocks until the server is confirmed ready.
   // Returns something like "ws://127.0.0.1:54321/acp"
   const wsUrl: string = await invoke("get_goose_serve_url");
 
@@ -213,10 +208,6 @@ async function initializeConnection(): Promise<GooseClient> {
 
   const client = new GooseClient(createClientCallbacks(), stream);
 
-  // Perform the ACP initialize handshake.
-  // The protocol version should match what goose serve expects.
-  // The Rust code uses ProtocolVersion::LATEST from agent-client-protocol.
-  // Check @agentclientprotocol/sdk for the equivalent constant.
   await client.initialize({
     protocolVersion: "2025-03-26",
     capabilities: {},
@@ -250,7 +241,6 @@ export async function getClient(): Promise<GooseClient> {
         return client;
       })
       .catch((error) => {
-        // Reset so the next call retries
         clientPromise = null;
         throw error;
       });
@@ -276,66 +266,6 @@ export function getClientSync(): GooseClient | null {
 }
 ```
 
-## Architecture Notes
-
-### WebSocket Transport
-
-The `goose serve` WebSocket endpoint at `/acp` uses simple framing:
-- **Client → Server**: Send a WS text frame containing a single JSON-RPC message (no trailing newline needed)
-- **Server → Client**: Each WS text frame contains a single JSON-RPC message
-
-This is exactly what the Rust Tauri backend does in `thread.rs` — it bridges between the `ClientSideConnection`'s newline-delimited JSON and the WebSocket's frame-per-message protocol. Our `createWebSocketStream` does the same bridging but directly in the browser.
-
-### Why WebSocket over HTTP+SSE
-
-- **Same transport the Rust layer already uses** — proven to work with `goose serve`
-- **True bidirectional** — no need for separate POST requests for each message
-- **Lower overhead** — no HTTP headers per message, no SSE framing
-- **Simpler connection model** — single persistent connection vs. SSE reconnection
-- The `@aaif/goose-acp` package ships `createHttpStream` for HTTP+SSE, but that transport has quirks (fire-and-forget POSTs for non-initialize requests, session header management). WebSocket is cleaner.
-
-### Singleton Pattern
-
-The module uses a promise-based singleton pattern:
-- `clientPromise` ensures only one initialization runs at a time
-- `resolvedClient` caches the result for synchronous access
-- If initialization fails, `clientPromise` is reset so the next call retries
-
-This mirrors the Rust `OnceCell<Arc<GooseAcpManager>>` pattern in `manager.rs`.
-
-### Notification Handler Registration
-
-The notification handler is registered separately (in Step 04) rather than being passed to `createClientCallbacks` at construction time. This avoids a circular dependency:
-- `acpConnection.ts` creates the client
-- `acpNotificationHandler.ts` needs the client (to know about sessions)
-- `acpNotificationHandler.ts` needs to be registered with the connection
-
-The `setNotificationHandler()` function breaks this cycle.
-
-### Client Callback Shape
-
-The `Client` interface from `@agentclientprotocol/sdk` defines `sessionUpdate` (not `sessionNotification`) as the callback method name. The Rust code's `Client` trait has `session_notification` — this is the same callback, just different naming conventions. Verify the exact method name in the SDK's `Client` interface:
-
-```typescript
-export interface Client {
-  requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse>;
-  sessionUpdate(params: SessionNotification): Promise<void>;
-  // ... optional methods: writeTextFile, readTextFile, createTerminal, etc.
-}
-```
-
-### Protocol Version
-
-The `protocolVersion` in the initialize request should match what `goose serve` expects. The Rust code uses `ProtocolVersion::LATEST` from the `agent-client-protocol` crate (currently `"2025-03-26"`). Check the `@agentclientprotocol/sdk` package for an exported constant — it may be available as `LATEST_PROTOCOL_VERSION` or similar. If not, hardcode the string.
-
-### Error Handling
-
-If `invoke("get_goose_serve_url")` fails (e.g., goose binary not found), the error propagates to the caller. The app startup code (Step 08) should handle this gracefully — showing an error state rather than crashing.
-
-### Reconnection
-
-The initial implementation does not handle WebSocket reconnection. If the connection drops (e.g., `goose serve` crashes), `getClient()` will return the stale client. Future enhancement: monitor `client.closed` / `client.signal` and reset the singleton so the next `getClient()` call reconnects.
-
 ## Verification
 
 1. `pnpm typecheck` passes.
@@ -355,14 +285,11 @@ The initial implementation does not handle WebSocket reconnection. If the connec
 - Step 01 (the `get_goose_serve_url` Tauri command must exist)
 - Step 02 (`@aaif/goose-acp` and `@agentclientprotocol/sdk` must be installed)
 
-## Future: Contribute `createWebSocketStream` to `@aaif/goose-acp`
+## Notes
 
-Since we control the `@aaif/goose-acp` package, we should eventually move `createWebSocketStream` there so it's available to all consumers (Electron app, TUI, etc.). The function would be exported alongside `createHttpStream`:
-
-```typescript
-// In @aaif/goose-acp
-export { createHttpStream } from "./http-stream.js";
-export { createWebSocketStream } from "./ws-stream.js";
-```
-
-For now, keeping it local in goose2 is the fastest path.
+- The `goose serve` WebSocket endpoint at `/acp` sends one JSON-RPC message per WS text frame (no trailing newline). This is the same framing the Rust Tauri backend uses in `thread.rs`. `createWebSocketStream` performs the same bridging directly in the browser.
+- WebSocket is used over HTTP+SSE because it is the same transport the Rust layer already uses with `goose serve`, provides true bidirectional communication on a single persistent connection, and avoids the quirks of `createHttpStream` (fire-and-forget POSTs, session header management).
+- The `Client` interface from `@agentclientprotocol/sdk` uses `sessionUpdate` as the callback method name. The Rust `Client` trait calls it `session_notification` — same callback, different naming convention.
+- The `protocolVersion` `"2025-03-26"` matches `ProtocolVersion::LATEST` from the Rust `agent-client-protocol` crate. Use `LATEST_PROTOCOL_VERSION` from `@agentclientprotocol/sdk` if exported; otherwise hardcode the string.
+- If `invoke("get_goose_serve_url")` fails, the error propagates to the caller. The app startup code (Step 08) handles this by showing an error state rather than crashing.
+- The initial implementation does not handle WebSocket reconnection. If the connection drops, `getClient()` returns the stale client. A future step can monitor `client.closed` / `client.signal` and reset the singleton to trigger reconnection.

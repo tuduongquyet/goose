@@ -97,7 +97,7 @@ Also delete the helper functions that were only used by those commands:
 - `default_artifacts_working_dir`
 - `expand_home_dir`
 - `resolve_working_dir`
-- The `#[cfg(test)] mod tests` block (the tests tested those helpers)
+- The `#[cfg(test)] mod tests` block
 
 ### 4. Update `lib.rs`
 
@@ -161,78 +161,21 @@ commands::acp::get_goose_serve_url,
 .run(|_app, _event| {});
 ```
 
-The `Arc` import can be removed if nothing else uses it. Check if `PersonaStore` or `GooseConfig` need it — they don't (they use `tauri::State` which handles the wrapping).
+The `Arc` import can be removed — `PersonaStore` and `GooseConfig` use `tauri::State` which handles the wrapping.
 
 ### 5. Clean up `goose_serve.rs`
 
 **File:** `src-tauri/src/services/acp/goose_serve.rs`
 
-The file is mostly kept as-is. Make these changes:
-
-1. The `ws_url()` method already exists on `GooseServeProcess` — no new method needed. Step 01 already wired `get_goose_serve_url` to call `process.ws_url()`.
-
-2. Remove the `WS_BRIDGE_BUFFER_BYTES` constant — it was only used by the WebSocket bridge in `thread.rs`:
+1. Remove the `WS_BRIDGE_BUFFER_BYTES` constant (only used by the deleted `thread.rs`):
 ```rust
 // DELETE:
 pub(crate) const WS_BRIDGE_BUFFER_BYTES: usize = 64 * 1024;
 ```
 
-3. The `resolve_goose_binary` function is still needed by `model_setup.rs` (which runs `goose configure`). Keep it exported as `pub(crate)`.
+2. Keep `resolve_goose_binary` exported as `pub(crate)` — it is still needed by `model_setup.rs` (which runs `goose configure`).
 
-### 6. Remove unused Cargo dependencies
-
-**File:** `src-tauri/Cargo.toml`
-
-Remove these dependencies that were only used by the deleted ACP code:
-
-```toml
-# DELETE these lines:
-agent-client-protocol = { version = "0.10.4", features = ["unstable_session_fork"] }
-acp-client = { git = "https://github.com/block/builderbot", rev = "db184d20cb48e0c90bbd3fea4a4a871fc9d8a6ad" }
-tokio-tungstenite = "0.21.0"
-async-trait = "0.1"
-```
-
-**Check before removing — these may still be used by remaining code:**
-
-- `futures = "0.3"` — check if any remaining code uses it. `goose_serve.rs` uses `futures::{SinkExt, StreamExt}` for the WebSocket readiness probe. After removing the WS probe... wait, the readiness probe in `wait_for_server_ready` uses `tokio-tungstenite` and `futures`. We need to replace the readiness check.
-
-**Replace the WebSocket readiness probe with an HTTP health check:**
-
-The `wait_for_server_ready` function currently connects via WebSocket to check if the server is up. Replace it with a simple HTTP GET to `/health`:
-
-```rust
-async fn wait_for_server_ready(base_url: &str, child: &mut Child) -> Result<(), String> {
-    let deadline = Instant::now() + GOOSE_SERVE_CONNECT_TIMEOUT;
-    let health_url = format!("{base_url}/health");
-
-    loop {
-        match reqwest::get(&health_url).await {
-            Ok(response) if response.status().is_success() => return Ok(()),
-            Ok(_) | Err(_) => {
-                if let Some(status) = child
-                    .try_wait()
-                    .map_err(|e| format!("Failed to poll goose serve process: {e}"))?
-                {
-                    return Err(format!(
-                        "Goose serve exited before becoming ready: {status}"
-                    ));
-                }
-
-                if Instant::now() >= deadline {
-                    return Err(format!(
-                        "Timed out waiting for goose serve at {health_url}"
-                    ));
-                }
-
-                tokio::time::sleep(GOOSE_SERVE_CONNECT_RETRY_DELAY).await;
-            }
-        }
-    }
-}
-```
-
-Wait — adding `reqwest` is a new dependency. A simpler approach: use `tokio::net::TcpStream::connect` to check if the port is open:
+3. Replace the WebSocket readiness probe with a TCP connect check. This eliminates the `tokio-tungstenite` and `futures` dependencies:
 
 ```rust
 async fn wait_for_server_ready(port: u16, child: &mut Child) -> Result<(), String> {
@@ -265,11 +208,36 @@ async fn wait_for_server_ready(port: u16, child: &mut Child) -> Result<(), Strin
 }
 ```
 
-This only needs `tokio` (already a dependency). Update the `spawn` method to call `wait_for_server_ready(port, &mut child)` instead of `wait_for_server_ready(&ws_url, &mut child)`.
+Update the `spawn` method to call `wait_for_server_ready(port, &mut child)` instead of `wait_for_server_ready(&ws_url, &mut child)`.
 
-With this change, `futures`, `tokio-tungstenite` can be removed.
+### 6. Handle `acp-client` binary discovery
 
-- `tokio-util = { version = "0.7", features = ["compat", "rt"] }` — check if anything else uses it. It was used by `thread.rs` for `TokioAsyncReadCompatExt`/`TokioAsyncWriteCompatExt`. If nothing else uses it, remove it.
+The `acp-client` crate is used by `goose_serve.rs` for `acp_client::find_acp_agent_by_id("goose")` in binary resolution. Two options:
+
+- **Option A (simplest):** Keep `acp-client` solely for binary discovery. It only uses the `find_acp_agent_by_id` function.
+- **Option B:** Inline the discovery logic — look for `goose` on PATH and check the `GOOSE_BIN` env var. The `GOOSE_BIN` path is already handled; the `find_acp_agent_by_id` fallback scans the login shell PATH, which can be replaced with a simple `which goose` equivalent.
+
+Choose one approach and apply it consistently.
+
+### 7. Remove unused Cargo dependencies
+
+**File:** `src-tauri/Cargo.toml`
+
+Remove these dependencies:
+
+```toml
+agent-client-protocol = { version = "0.10.4", features = ["unstable_session_fork"] }
+tokio-tungstenite = "0.21.0"
+async-trait = "0.1"
+futures = "0.3"
+tokio-util = { version = "0.7", features = ["compat", "rt"] }
+```
+
+If Option A from §6 is chosen, keep `acp-client`. If Option B is chosen, also remove:
+
+```toml
+acp-client = { git = "https://github.com/block/builderbot", rev = "db184d20cb48e0c90bbd3fea4a4a871fc9d8a6ad" }
+```
 
 After all removals, the remaining dependencies should be:
 
@@ -295,23 +263,16 @@ doctor = { git = "https://github.com/block/builderbot", rev = "8e1c3ec145edc0df5
 keyring = { ... } # platform-specific
 ```
 
-Use `cargo remove` or edit `Cargo.toml` directly, then run `cargo check` to verify nothing breaks.
+Run `cargo check` after editing `Cargo.toml` to verify nothing breaks.
 
-### 7. Run full verification
+### 8. Run full verification
 
 ```bash
 cd ui/goose2/src-tauri
 
-# Format
 cargo fmt
-
-# Check compilation
 cargo check
-
-# Clippy
 cargo clippy --all-targets -- -D warnings
-
-# Run any remaining Rust tests
 cargo test
 ```
 
@@ -342,14 +303,14 @@ just tauri-check
 | `services/acp/search.rs` | ~467 | Session content search |
 | **Total** | **~2,749** | |
 
-Plus significant simplification of `commands/acp.rs` (~330 → ~15 lines) and `services/acp/mod.rs` (~147 → ~4 lines) and `lib.rs` (~114 → ~80 lines).
+Plus significant simplification of `commands/acp.rs` (~330 → ~15 lines), `services/acp/mod.rs` (~147 → ~4 lines), and `lib.rs` (~114 → ~80 lines).
 
 ## Cargo Dependencies Removed
 
 | Crate | Why it was needed |
 |-------|-------------------|
 | `agent-client-protocol` | Rust ACP client types (Agent, ClientSideConnection, etc.) |
-| `acp-client` | Agent discovery, MessageWriter trait |
+| `acp-client` | Agent discovery, MessageWriter trait (kept if using Option A for binary discovery) |
 | `tokio-tungstenite` | WebSocket connection to goose serve |
 | `async-trait` | MessageWriter + Client trait impls |
 | `futures` | WebSocket stream splitting (SinkExt, StreamExt) |
@@ -363,7 +324,7 @@ Plus significant simplification of `commands/acp.rs` (~330 → ~15 lines) and `s
 | `src-tauri/src/services/acp/goose_serve.rs` | Remove `WS_BRIDGE_BUFFER_BYTES` constant, replace readiness probe with TCP connect |
 | `src-tauri/src/commands/acp.rs` | Replaced with single `get_goose_serve_url` command |
 | `src-tauri/src/lib.rs` | Remove AcpSessionRegistry, old ACP commands, simplify run closure |
-| `src-tauri/Cargo.toml` | Remove 6 dependencies |
+| `src-tauri/Cargo.toml` | Remove 5–6 dependencies |
 | `src-tauri/Cargo.lock` | Auto-updated |
 
 ## Files Deleted
@@ -376,11 +337,5 @@ All files listed in the "Summary of Deletions" table above.
 
 ## Notes
 
-- Run `cargo check` after each deletion batch to catch any remaining references.
+- Run `cargo check` after each deletion batch to catch remaining references.
 - The `doctor` crate dependency stays — it's used by `commands/doctor.rs` which is not part of this migration.
-- The `acp-client` crate was also used by `goose_serve.rs` for `acp_client::find_acp_agent_by_id("goose")` in binary resolution. Check if this import still exists. If so, you need an alternative way to find the goose binary. Options:
-  - Keep `acp-client` just for binary discovery (lightweight — only uses the `find_acp_agent_by_id` function)
-  - Inline the binary discovery logic (look for `goose` on PATH, check `GOOSE_BIN` env var)
-  - The `GOOSE_BIN` env var path is already handled. The `acp_client::find_acp_agent_by_id` fallback scans login shell PATH. You could replace it with a simple `which goose` equivalent.
-  
-  If keeping `acp-client` just for binary discovery is acceptable, that's the simplest path. Otherwise, port the discovery logic.

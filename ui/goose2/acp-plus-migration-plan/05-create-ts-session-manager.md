@@ -2,7 +2,7 @@
 
 ## Objective
 
-Port the session state management and ACP operations from the Rust `session_ops.rs`, `command_dispatch.rs`, and `registry.rs` to TypeScript. This module orchestrates all ACP calls (prepare session, send prompt, cancel, load, list, export, import, fork, set model, list providers).
+Port session state management and ACP operations from the Rust `session_ops.rs`, `command_dispatch.rs`, and `registry.rs` to TypeScript. This module orchestrates all ACP calls: prepare session, send prompt, cancel, load, list, export, import, fork, set model, and list providers.
 
 ## Why
 
@@ -24,8 +24,6 @@ All of this is pure protocol logic with no native OS access — it belongs in Ty
 
 ### Prepared Session Cache
 
-Port from `session_ops.rs`:
-
 ```typescript
 interface PreparedSession {
   gooseSessionId: string;
@@ -38,8 +36,6 @@ const preparedSessions = new Map<string, PreparedSession>();
 ```
 
 ### Composite Key Helpers
-
-Port from `mod.rs`:
 
 ```typescript
 export function makeCompositeKey(sessionId: string, personaId?: string): string {
@@ -63,8 +59,6 @@ export function splitCompositeKey(key: string): { sessionId: string; personaId: 
 
 ### Running Session Tracking
 
-Port from `registry.rs`:
-
 ```typescript
 interface RunningSession {
   compositeKey: string;
@@ -77,11 +71,11 @@ interface RunningSession {
 const runningSessions = new Map<string, RunningSession>();
 ```
 
-## Core Operations to Port
+## Core Operations
 
 ### 1. `prepareSession`
 
-Port from `prepare_session_inner` in `session_ops.rs`. This is the most complex function — it:
+This is the most complex function. It:
 
 1. Checks if a session is already prepared for this composite key
 2. If yes, reuses it (updating working dir / provider if changed)
@@ -100,16 +94,13 @@ export async function prepareSession(
 ): Promise<string> {
   const client = await getClient();
 
-  // Check for existing prepared session
   const existing = preparedSessions.get(compositeKey) ?? preparedSessions.get(localSessionId);
   if (existing) {
     bindSession(existing.gooseSessionId, localSessionId, providerId);
-    // Update working dir if changed
     if (existing.workingDir !== workingDir) {
       await client.goose.gooseWorkingDirUpdate({ sessionId: existing.gooseSessionId, workingDir });
       // ... update cache
     }
-    // Update provider if changed
     if (existing.providerId !== providerId) {
       const response = await client.setSessionConfigOption({
         sessionId: existing.gooseSessionId,
@@ -121,7 +112,6 @@ export async function prepareSession(
     return existing.gooseSessionId;
   }
 
-  // Try to load existing session
   let gooseSessionId: string | null = null;
   try {
     const loadResponse = await client.loadSession({
@@ -150,7 +140,6 @@ export async function prepareSession(
     // ... handle model state from newResponse
   }
 
-  // Cache the prepared session
   const prepared: PreparedSession = { gooseSessionId, providerId, workingDir };
   preparedSessions.set(compositeKey, prepared);
   preparedSessions.set(localSessionId, prepared);
@@ -160,8 +149,6 @@ export async function prepareSession(
 ```
 
 ### 2. `sendPrompt`
-
-Port from `send_prompt_inner` in `prompt_ops.rs`:
 
 ```typescript
 export async function sendPrompt(
@@ -179,10 +166,8 @@ export async function sendPrompt(
   const client = await getClient();
   const compositeKey = makeCompositeKey(sessionId, options.personaId);
 
-  // Build effective prompt with persona instructions
   const effectivePrompt = buildEffectivePrompt(prompt, options.systemPrompt);
 
-  // Register running session
   const abort = new AbortController();
   const assistantMessageId = crypto.randomUUID();
   runningSessions.set(compositeKey, {
@@ -194,26 +179,21 @@ export async function sendPrompt(
   });
 
   try {
-    // Prepare session (creates/loads goose session if needed)
     const workingDir = options.workingDir ?? defaultArtifactsWorkingDir();
     const gooseSessionId = await prepareSession(compositeKey, sessionId, providerId, workingDir);
 
-    // Attach writer in notification handler (so streaming events go to this message)
     attachWriter(gooseSessionId, sessionId, providerId, assistantMessageId, options.personaId, options.personaName);
 
-    // Build content blocks
     const content: ContentBlock[] = [{ type: "text", text: effectivePrompt }];
     for (const [data, mimeType] of (options.images ?? [])) {
       content.push({ type: "image", data, mimeType });
     }
 
-    // Send the prompt — this blocks until the agent finishes
     await client.prompt({
       sessionId: gooseSessionId,
       content,
     });
 
-    // Finalize the message
     clearWriter(gooseSessionId);
     finalizeMessage(sessionId, assistantMessageId);
   } catch (error) {
@@ -227,14 +207,11 @@ export async function sendPrompt(
 
 ### 3. `cancelSession`
 
-Port from `cancel_session_inner`:
-
 ```typescript
 export async function cancelSession(sessionId: string, personaId?: string): Promise<boolean> {
   const compositeKey = makeCompositeKey(sessionId, personaId);
   const running = runningSessions.get(compositeKey);
 
-  // Find the goose session ID
   const prepared = preparedSessions.get(compositeKey) ?? preparedSessions.get(sessionId);
   if (!prepared) {
     return running !== undefined; // still preparing
@@ -277,8 +254,6 @@ export async function listSessions(): Promise<AcpSessionInfo[]> {
 
 ### 5. `loadSession`
 
-Port from `load_session_inner`:
-
 ```typescript
 export async function loadSession(
   localSessionId: string,
@@ -287,7 +262,6 @@ export async function loadSession(
 ): Promise<void> {
   const client = await getClient();
 
-  // Start replay buffering
   bindSession(gooseSessionId, localSessionId);
   startReplayBuffer(localSessionId);
 
@@ -297,10 +271,8 @@ export async function loadSession(
   });
 
   // The backend sends replay notifications asynchronously.
-  // We wait for the replay_complete signal (handled by the notification handler)
-  // which calls flushReplayBuffer().
+  // The notification handler flushes the replay buffer on replay_complete.
 
-  // Handle model state from response
   if (response.models) {
     handleModelState(localSessionId, null, /* extract from response.models */);
   }
@@ -309,10 +281,9 @@ export async function loadSession(
     if (modelState) handleModelState(localSessionId, null, modelState);
   }
 
-  // Register in prepared sessions cache
   preparedSessions.set(localSessionId, {
     gooseSessionId,
-    providerId: "goose", // will be updated on next prepare
+    providerId: "goose", // updated on next prepare
     workingDir,
   });
 }
@@ -353,7 +324,6 @@ export async function forkSession(sessionId: string): Promise<AcpSessionInfo> {
 export async function setModel(localSessionId: string, modelId: string): Promise<void> {
   const client = await getClient();
 
-  // Find all prepared sessions for this local session ID
   for (const [key, prepared] of preparedSessions) {
     const { sessionId } = splitCompositeKey(key);
     if (sessionId !== localSessionId) continue;
@@ -363,7 +333,6 @@ export async function setModel(localSessionId: string, modelId: string): Promise
       optionId: "model",
       value: modelId,
     });
-    // Emit model state from response
     const modelState = extractModelOptionsFromConfigOptions(response.configOptions);
     if (modelState) handleModelState(localSessionId, prepared.providerId, modelState);
   }
@@ -425,8 +394,6 @@ export function cancelAll(): void {
 
 ## Helper: Build Effective Prompt
 
-Port the persona instruction wrapping from `mod.rs`:
-
 ```typescript
 function buildEffectivePrompt(prompt: string, systemPrompt?: string): string {
   if (!systemPrompt || systemPrompt.trim().length === 0) {
@@ -443,13 +410,11 @@ function buildEffectivePrompt(prompt: string, systemPrompt?: string): string {
 
 ```typescript
 function defaultArtifactsWorkingDir(): string {
-  // This will be fetched from the Rust backend via getHomeDir()
-  // or cached at startup. For now, use a reasonable default.
   return "~/.goose/artifacts";
 }
 ```
 
-Note: The Rust code resolves `~` to the actual home directory and creates the directory. In the TS version, the `goose serve` backend handles working directory resolution. We just need to pass a reasonable path.
+The `goose serve` backend handles working directory resolution and `~` expansion. This function only needs to supply a reasonable path.
 
 ## Imports from Other Modules
 
@@ -469,6 +434,18 @@ import {
 } from "./acpNotificationHandler";
 ```
 
+## Concurrency
+
+The Rust code uses per-session `Mutex` locks (`op_locks`) and `pending_cancels` / `preparing_sessions` sets to prevent concurrent mutations and coordinate cancellation during preparation. In single-threaded JS, mutex locks aren't needed for correctness, but a simple promise-based lock prevents concurrent `prepareSession` calls for the same composite key from racing. Port `pending_cancels` and `preparing_sessions` as module-level `Set<string>` variables.
+
+## Generated Client Method Names
+
+The `GooseExtClient` methods (e.g., `client.goose.gooseProvidersList()`) are generated from the ACP schema. Verify actual method names in `ui/acp/src/generated/client.gen.ts` — they use camelCase versions of the `goose/providers/list` method name.
+
+## Streaming Model
+
+The `client.prompt()` call blocks until the agent finishes responding. During this time, `SessionNotification` events stream in via the `Client` callback, handled by the notification handler. This matches the Rust flow.
+
 ## Verification
 
 1. `pnpm typecheck` passes.
@@ -486,10 +463,3 @@ import {
 
 - Step 03 (`acpConnection.ts` — provides `getClient()`)
 - Step 04 (`acpNotificationHandler.ts` — provides bind/attach/clear/finalize functions)
-
-## Notes
-
-- The Rust code uses per-session `Mutex` locks (`op_locks`) to prevent concurrent mutations. In single-threaded JS, this isn't needed for correctness, but you may want a simple promise-based lock to prevent concurrent `prepareSession` calls for the same composite key from racing.
-- The Rust `pending_cancels` / `preparing_sessions` sets coordinate cancellation during preparation. Port these as simple `Set<string>` module-level variables.
-- The `GooseExtClient` methods (e.g., `client.goose.gooseProvidersList()`) are generated from the ACP schema. Check the actual method names in `ui/acp/src/generated/client.gen.ts` — they may use camelCase versions of the `goose/providers/list` method name.
-- The `client.prompt()` call blocks until the agent finishes responding. During this time, `SessionNotification` events stream in via the `Client` callback (handled by the notification handler). This is the same flow as the Rust code.
