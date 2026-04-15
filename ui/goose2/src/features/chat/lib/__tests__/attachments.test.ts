@@ -121,4 +121,30 @@ describe("rebuildAttachmentDrafts", () => {
     expect(drafts[0].kind).toBe("file");
     expect(drafts[0].name).toBe("photo.jpg");
   });
+
+  it("preserves pathless browser-uploaded file attachments", () => {
+    const msg: Message = {
+      id: "m4",
+      role: "user",
+      created: Date.now(),
+      content: [{ type: "text", text: "see attached" }],
+      metadata: {
+        userVisible: true,
+        agentVisible: true,
+        attachments: [
+          {
+            type: "file",
+            name: "report.pdf",
+            mimeType: "application/pdf",
+          },
+        ],
+      },
+    };
+
+    const drafts = rebuildAttachmentDrafts(msg);
+
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].kind).toBe("file");
+    expect(drafts[0].name).toBe("report.pdf");
+  });
 });

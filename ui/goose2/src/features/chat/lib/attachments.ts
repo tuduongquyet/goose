@@ -112,14 +112,14 @@ export function rebuildAttachmentDrafts(
         name: att.name,
         path: att.path,
       });
-    } else if (att.type === "file" && att.path) {
+    } else if (att.type === "file") {
       // Skip image file entries when content blocks already provide the base64
       if (hasImageDrafts && att.mimeType?.startsWith("image/")) continue;
       drafts.push({
         id: crypto.randomUUID(),
         kind: "file",
         name: att.name,
-        path: att.path,
+        ...(att.path ? { path: att.path } : {}),
         mimeType: att.mimeType,
       });
     }
