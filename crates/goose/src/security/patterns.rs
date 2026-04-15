@@ -48,7 +48,7 @@ impl RiskLevel {
 pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     ThreatPattern {
         name: "rm_rf_root_bare",
-        pattern: r"rm\s+(-[rRfF]*[rRfF][rRfF]*|--recursive\s+--force|--force\s+--recursive)\s+/(\s|$)",
+        pattern: r"rm\s+(-[rRfF]+\s+)*(-[rRfF]+|--recursive|--force|--no-preserve-root)(\s+(-[rRfF]+|--recursive|--force|--no-preserve-root))*\s+['\x22]?/['\x22]?(\s|$)",
         description: "Recursive deletion of root filesystem",
         risk_level: RiskLevel::Critical,
         category: ThreatCategory::FileSystemDestruction,
