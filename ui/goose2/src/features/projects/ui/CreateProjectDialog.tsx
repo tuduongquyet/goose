@@ -7,6 +7,7 @@ import { Button } from "@/shared/ui/button";
 import { Checkbox } from "@/shared/ui/checkbox";
 import { Input } from "@/shared/ui/input";
 import { Label } from "@/shared/ui/label";
+import { ProjectGlyph } from "@/shared/ui/ProjectGlyph";
 import {
   Dialog,
   DialogContent,
@@ -292,14 +293,15 @@ export function CreateProjectDialog({
                   type="button"
                   onClick={() => setColor(c)}
                   className={cn(
-                    "h-6 w-6 rounded-full border-2 transition-transform",
+                    "flex h-7 w-7 items-center justify-center rounded-md border transition-transform",
                     color === c
-                      ? "border-foreground scale-110"
-                      : "border-transparent hover:scale-105",
+                      ? "border-foreground bg-accent/30 scale-105"
+                      : "border-transparent hover:scale-105 hover:bg-accent/20",
                   )}
-                  style={{ backgroundColor: c }}
                   aria-label={t("dialog.colorAria", { color: c })}
-                />
+                >
+                  <ProjectGlyph color={c} className="size-4" />
+                </button>
               ))}
             </div>
           </div>

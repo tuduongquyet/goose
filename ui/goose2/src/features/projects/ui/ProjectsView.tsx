@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { SearchBar } from "@/shared/ui/SearchBar";
 import { Button, buttonVariants } from "@/shared/ui/button";
+import { ProjectGlyph } from "@/shared/ui/ProjectGlyph";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -215,9 +216,9 @@ export function ProjectsView({ onStartChat }: ProjectsViewProps) {
                   className="flex items-start justify-between gap-3 rounded-lg border border-border px-4 py-3"
                 >
                   <div className="min-w-0 flex-1 flex items-start gap-3">
-                    <span
-                      className="inline-block w-2.5 h-2.5 rounded-full mt-1.5 shrink-0"
-                      style={{ backgroundColor: project.color }}
+                    <ProjectGlyph
+                      color={project.color}
+                      className="mt-0.5 size-4 shrink-0"
                     />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">{project.name}</p>

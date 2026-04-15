@@ -33,21 +33,13 @@ import {
   getCatalogEntry,
   resolveAgentProviderCatalogIdStrict,
 } from "@/features/providers/providerCatalog";
+import { ProjectGlyph } from "@/shared/ui/ProjectGlyph";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
 
 function ProjectDot({ color }: { color?: string | null }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-block size-2 rounded-full",
-        color ? "" : "bg-muted-foreground/40",
-      )}
-      style={color ? { backgroundColor: color } : undefined}
-    />
-  );
+  return <ProjectGlyph color={color} className="size-3.5" />;
 }
 
 interface ChatInputToolbarProps {

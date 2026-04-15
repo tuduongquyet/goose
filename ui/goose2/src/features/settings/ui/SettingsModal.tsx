@@ -42,6 +42,7 @@ import {
 import { useChatSessionStore } from "@/features/chat/stores/chatSessionStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { getDisplaySessionTitle } from "@/features/chat/lib/sessionTitle";
+import { ProjectGlyph } from "@/shared/ui/ProjectGlyph";
 
 import type { Session } from "@/shared/types/chat";
 
@@ -312,9 +313,9 @@ export function SettingsModal({
                         className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: project.color }}
+                          <ProjectGlyph
+                            color={project.color}
+                            className="size-3.5 flex-shrink-0"
                           />
                           <span className="text-sm truncate">
                             {project.name}
