@@ -266,10 +266,21 @@ pub async fn handle_create_skill(arguments: Option<JsonObject>) -> Result<CallTo
     }
 
     // Validate frontmatter: must have opening/closing delimiters and required fields
-    if parse_skill_content(content, PathBuf::new()).is_none() {
+    let parsed = parse_skill_content(content, PathBuf::new());
+    if parsed.is_none() {
         return Ok(CallToolResult::error(vec![Content::text(
             "Invalid skill content. Must have valid YAML frontmatter with 'name' and 'description' fields:\n---\nname: my-skill\ndescription: What this skill does\n---\nInstructions here...",
         )]));
+    }
+
+    // Enforce that frontmatter name matches the directory name argument
+    if let Some(ref source) = parsed {
+        if source.name != name {
+            return Ok(CallToolResult::error(vec![Content::text(format!(
+                "Frontmatter name '{}' does not match skill name argument '{}'. They must match.",
+                source.name, name
+            ))]));
+        }
     }
 
     // Scan content for prompt injection / exfiltration patterns
@@ -350,7 +361,13 @@ pub async fn handle_patch_skill(
     }
 
     let skills = discover_skills(working_dir);
-    let skill = skills.iter().find(|s| s.name == name);
+    let goose_skills_prefix = Paths::config_dir().join("skills");
+    // Prefer the goose-managed copy when a local skill shadows it by name
+    let skill = skills
+        .iter()
+        .filter(|s| s.name == name)
+        .find(|s| s.path.starts_with(&goose_skills_prefix))
+        .or_else(|| skills.iter().find(|s| s.name == name));
 
     let Some(skill) = skill else {
         return Ok(CallToolResult::error(vec![Content::text(format!(
