@@ -485,7 +485,6 @@ describe("useChat", () => {
 
       expect(mockAcpSendMessage).toHaveBeenCalledWith(
         "session-1",
-        "goose",
         "Second question",
         expect.objectContaining({ personaId: undefined }),
       );
@@ -513,7 +512,6 @@ describe("useChat", () => {
 
       expect(mockAcpSendMessage).toHaveBeenCalledWith(
         "session-1",
-        "goose",
         "Hello persona",
         expect.objectContaining({
           personaId: "persona-a",
@@ -699,7 +697,6 @@ describe("useChat", () => {
       // The re-sent message should carry the image
       expect(mockAcpSendMessage).toHaveBeenCalledWith(
         "session-1",
-        "goose",
         expect.any(String),
         expect.objectContaining({
           images: [[expect.any(String), "image/png"]],
@@ -779,7 +776,6 @@ describe("useChat", () => {
 
       expect(mockAcpSendMessage).toHaveBeenCalledWith(
         "session-1",
-        "goose",
         expect.stringContaining("Look at this"),
         expect.objectContaining({
           images: [["base64data", "image/jpeg"]],
