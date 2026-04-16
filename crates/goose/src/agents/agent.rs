@@ -1230,7 +1230,6 @@ impl Agent {
                     .unwrap_or(DEFAULT_MAX_TURNS)
             });
             let mut compaction_attempts = 0;
-            let mut last_assistant_text = String::new();
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1337,10 +1336,6 @@ impl Agent {
 
                                 let num_tool_requests = frontend_requests.len() + remaining_requests.len();
                                 if num_tool_requests == 0 {
-                                    let text = filtered_response.as_concat_text();
-                                    if !text.is_empty() {
-                                        last_assistant_text = text;
-                                    }
                                     messages_to_add.push(response);
                                     continue;
                                 }
@@ -1799,9 +1794,7 @@ impl Agent {
                 tokio::task::yield_now().await;
             }
 
-            if !last_assistant_text.is_empty() {
-                tracing::info!(target: "goose::agents::agent", trace_output = last_assistant_text.as_str());
-            }
+
         }.instrument(reply_stream_span));
         Ok(inner)
     }

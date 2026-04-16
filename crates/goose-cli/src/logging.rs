@@ -28,11 +28,20 @@ fn default_env_filter() -> EnvFilter {
 /// - No console output (all logs go to files only)
 /// - Optional Langfuse integration (DEBUG level)
 pub fn setup_logging(name: Option<&str>) -> Result<()> {
-    setup_logging_internal(name, false)
+    setup_logging_with_options(name, false, false)
 }
 
-/// Internal function that allows bypassing the Once check for testing
-fn setup_logging_internal(name: Option<&str>, force: bool) -> Result<()> {
+/// Sets up logging with console output on stderr.
+/// Used by the `serve` command so operators can see requests arriving.
+pub fn setup_logging_with_console(name: Option<&str>) -> Result<()> {
+    setup_logging_with_options(name, false, true)
+}
+
+fn setup_logging_with_options(name: Option<&str>, force: bool, console: bool) -> Result<()> {
+    setup_logging_internal(name, force, console)
+}
+
+fn setup_logging_internal(name: Option<&str>, force: bool, console: bool) -> Result<()> {
     let mut result = Ok(());
 
     let mut setup = || {
@@ -63,10 +72,23 @@ fn setup_logging_internal(name: Option<&str>, force: bool) -> Result<()> {
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| default_env_filter());
 
             // Start building the subscriber
-            let mut layers = vec![
-                file_layer.with_filter(env_filter).boxed(),
-                // Console logging disabled for CLI - all logs go to files only
-            ];
+            let mut layers = vec![file_layer.with_filter(env_filter).boxed()];
+
+            if console {
+                let console_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                    EnvFilter::new("")
+                        .add_directive("goose_acp=info".parse().unwrap())
+                        .add_directive("goose=info".parse().unwrap())
+                        .add_directive("tower_http=info".parse().unwrap())
+                        .add_directive(LevelFilter::WARN.into())
+                });
+                let console_layer = fmt::layer()
+                    .with_target(true)
+                    .with_level(true)
+                    .with_writer(std::io::stderr)
+                    .with_ansi(true);
+                layers.push(console_layer.with_filter(console_filter).boxed());
+            }
 
             #[cfg(feature = "otel")]
             if !force {

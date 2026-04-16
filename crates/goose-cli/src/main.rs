@@ -3,7 +3,13 @@ use goose_cli::cli::cli;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    if let Err(e) = goose_cli::logging::setup_logging(None) {
+    let is_serve = std::env::args().any(|a| a == "serve");
+    let logging_result = if is_serve {
+        goose_cli::logging::setup_logging_with_console(Some("serve"))
+    } else {
+        goose_cli::logging::setup_logging(None)
+    };
+    if let Err(e) = logging_result {
         eprintln!("Warning: Failed to initialize logging: {}", e);
     }
 

@@ -16,6 +16,7 @@ use axum::{
 };
 use serde_json::Value;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::TraceLayer;
 
 use crate::acp::server_factory::AcpServer;
 
@@ -145,5 +146,6 @@ pub fn create_router(server: Arc<AcpServer>) -> Router {
             get(handle_get).with_state((http_state.clone(), ws_state)),
         )
         .route("/acp", delete(http::handle_delete).with_state(http_state))
+        .layer(TraceLayer::new_for_http())
         .layer(cors)
 }

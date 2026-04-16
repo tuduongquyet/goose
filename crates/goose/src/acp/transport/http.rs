@@ -217,6 +217,21 @@ async fn run_router(
     router: Arc<MessageRouter>,
 ) {
     while let Some(msg) = from_agent_rx.recv().await {
+        if let Ok(parsed) = serde_json::from_str::<Value>(&msg) {
+            let method = parsed
+                .get("method")
+                .and_then(|m| m.as_str())
+                .unwrap_or("<response>");
+            let id = parsed.get("id").map(|id| id.to_string());
+            if is_jsonrpc_response_or_error(&parsed) {
+                debug!(
+                    id = id.as_deref().unwrap_or(""),
+                    "ACP response sent to client"
+                );
+            } else {
+                debug!(method = method, "ACP server notification: {}", method);
+            }
+        }
         router.route(&msg).await;
     }
     debug!("Router task exiting — agent channel closed");
@@ -426,8 +441,18 @@ pub(crate) async fn handle_post(
             .into_response();
     }
 
+    let method = json_message
+        .get("method")
+        .and_then(|m| m.as_str())
+        .unwrap_or("<response>");
+    let rpc_id = json_message
+        .get("id")
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+
     // Initialize — no Acp-Connection-Id required.
     if is_initialize_request(&json_message) {
+        info!(method = method, id = %rpc_id, "ACP request: initialize (new connection)");
         return handle_initialize(state, &json_message).await;
     }
 
@@ -445,9 +470,19 @@ pub(crate) async fn handle_post(
     }
 
     if is_jsonrpc_request(&json_message) {
+        info!(
+            method = method,
+            id = %rpc_id,
+            connection_id = %conn_id,
+            "ACP request: {}", method
+        );
         handle_request(state, &conn_id, &json_message).await
     } else {
-        // Notification or client response — fire and forget.
+        info!(
+            method = method,
+            connection_id = %conn_id,
+            "ACP notification/response: {}", method
+        );
         handle_notification_or_response(state, &conn_id, &json_message).await
     }
 }

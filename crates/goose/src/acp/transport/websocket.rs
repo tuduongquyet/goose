@@ -4,6 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures::{SinkExt, StreamExt};
+use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -135,7 +136,10 @@ pub(crate) async fn handle_ws(socket: WebSocket, state: Arc<WsState>, connection
                 match msg_result {
                     Ok(Message::Text(text)) => {
                         let text_str = text.to_string();
-                        debug!(connection_id = %connection_id, "Client → Agent: {} bytes", text_str.len());
+                        if let Ok(parsed) = serde_json::from_str::<Value>(&text_str) {
+                            let method = parsed.get("method").and_then(|m| m.as_str()).unwrap_or("<response>");
+                            info!(connection_id = %connection_id, method = method, "WS client → agent: {}", method);
+                        }
                         if let Err(e) = to_agent.send(text_str).await {
                             error!(connection_id = %connection_id, "Failed to send to agent: {}", e);
                             break;
@@ -158,7 +162,15 @@ pub(crate) async fn handle_ws(socket: WebSocket, state: Arc<WsState>, connection
             }
 
             Some(text) = from_agent_rx.recv() => {
-                debug!(connection_id = %connection_id, "Agent → Client: {} bytes", text.len());
+                if let Ok(parsed) = serde_json::from_str::<Value>(&text) {
+                    let method = parsed.get("method").and_then(|m| m.as_str());
+                    let id = parsed.get("id").map(|id| id.to_string());
+                    if let Some(m) = method {
+                        info!(connection_id = %connection_id, method = m, "WS agent → client: {}", m);
+                    } else if id.is_some() {
+                        info!(connection_id = %connection_id, id = id.as_deref().unwrap_or(""), "WS agent → client: response");
+                    }
+                }
                 if let Err(e) = ws_tx.send(Message::Text(text.into())).await {
                     error!(connection_id = %connection_id, "Failed to send to client: {}", e);
                     break;
