@@ -54,7 +54,7 @@ use sacp::schema::{
 use sacp::util::MatchDispatchFrom;
 use sacp::{
     Agent as SacpAgent, ByteStreams, Client, ConnectionTo, Dispatch, HandleDispatchFrom, Handled,
-    Responder,
+    JsonRpcMessage, Responder,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -3568,6 +3568,54 @@ pub struct GooseAcpHandler {
     pub agent: Arc<GooseAcpAgent>,
 }
 
+/// Validate that a request's params can be deserialized into the expected type.
+///
+/// The `sacp` MatchDispatchFrom chain consumes the `Responder` when a method matches
+/// but params fail to deserialize, then propagates the parse error as a fatal
+/// connection error. This kills the entire connection instead of returning a
+/// JSON-RPC error response to the client.
+///
+/// This function checks known request types *before* the chain runs. If the method
+/// matches but params are invalid, it sends a JSON-RPC error response via the
+/// `Responder` and returns `Ok(Some(Handled::Yes))`. Otherwise returns `Ok(None)`
+/// to indicate the message should proceed to the chain.
+fn validate_request_params(message: &Dispatch) -> Option<sacp::Error> {
+    let Dispatch::Request(ref req, _) = message else {
+        return None;
+    };
+
+    let method = req.method();
+    let params = req.params();
+
+    // For each known request type, check if the method matches and if so,
+    // validate that the params can be deserialized.
+    macro_rules! check {
+        ($ty:ty) => {
+            if <$ty>::matches_method(method) {
+                return match <$ty>::parse_message(method, params) {
+                    Ok(_) => None,
+                    Err(e) => Some(e),
+                };
+            }
+        };
+    }
+
+    check!(InitializeRequest);
+    check!(AuthenticateRequest);
+    check!(NewSessionRequest);
+    check!(LoadSessionRequest);
+    check!(ForkSessionRequest);
+    check!(PromptRequest);
+    check!(CloseSessionRequest);
+    check!(ListSessionsRequest);
+    check!(SetSessionConfigOptionRequest);
+    check!(SetSessionModeRequest);
+    check!(SetSessionModelRequest);
+
+    // Unknown method — let the chain handle it (will reach `otherwise`).
+    None
+}
+
 impl HandleDispatchFrom<Client> for GooseAcpHandler {
     fn describe_chain(&self) -> impl std::fmt::Debug {
         "goose-acp"
@@ -3583,6 +3631,19 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
         // The MatchDispatchFrom chain produces an ~85KB async state machine.
         // Box::pin moves it to the heap so it doesn't overflow the tokio worker stack.
         Box::pin(async move {
+            // Pre-validate request params to avoid the MatchDispatchFrom chain
+            // consuming the Responder on parse failure and killing the connection.
+            if let Some(parse_err) = validate_request_params(&message) {
+                if let Dispatch::Request(_, responder) = message {
+                    warn!(
+                        error = %parse_err.message,
+                        "Invalid request params, returning JSON-RPC error"
+                    );
+                    responder.respond_with_error(parse_err)?;
+                    return Ok(Handled::Yes);
+                }
+            }
+
             MatchDispatchFrom::new(message, &cx)
                 .if_request(
                     |req: InitializeRequest, responder: Responder<InitializeResponse>| async {
