@@ -1,12 +1,27 @@
 import type { AnyMessage, Stream } from "@agentclientprotocol/sdk";
 
+const ACP_CONNECTION_HEADER = "Acp-Connection-Id";
 const ACP_SESSION_HEADER = "Acp-Session-Id";
 
+/**
+ * Creates an ACP Stream that communicates over the Streamable HTTP transport
+ * defined in RFD 721.
+ *
+ * Protocol flow:
+ *   1. `initialize` → POST (no Acp-Connection-Id), returns per-request SSE
+ *      with `Acp-Connection-Id` in response headers.
+ *   2. JSON-RPC requests → POST with `Acp-Connection-Id`, returns per-request
+ *      SSE that delivers notifications + the final response, then closes.
+ *   3. Notifications / client responses → POST with `Acp-Connection-Id`,
+ *      returns 202 Accepted (no body).
+ *   4. `session/new`, `session/load`, `session/fork` responses carry
+ *      `Acp-Session-Id` in the response headers (informational).
+ */
 export function createHttpStream(serverUrl: string): Stream {
-  let sessionId: string | null = null;
+  let connectionId: string | null = null;
   const incoming: AnyMessage[] = [];
   const waiters: Array<() => void> = [];
-  const sseAbort = new AbortController();
+  const abortController = new AbortController();
 
   function pushMessage(msg: AnyMessage) {
     incoming.push(msg);
@@ -19,7 +34,10 @@ export function createHttpStream(serverUrl: string): Stream {
     return new Promise<void>((r) => waiters.push(r));
   }
 
-  async function consumeSSE(response: Response) {
+  async function consumeSSE(
+    response: Response,
+    signal?: AbortSignal,
+  ): Promise<void> {
     if (!response.body) return;
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -27,6 +45,7 @@ export function createHttpStream(serverUrl: string): Stream {
 
     try {
       while (true) {
+        if (signal?.aborted) break;
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
@@ -36,12 +55,16 @@ export function createHttpStream(serverUrl: string): Stream {
 
         for (const part of parts) {
           for (const line of part.split("\n")) {
-            if (line.startsWith("data: ")) {
-              try {
-                const msg = JSON.parse(line.slice(6)) as AnyMessage;
-                pushMessage(msg);
-              } catch {
-                // ignore malformed JSON
+            if (line.startsWith("data: ") || line.startsWith("data:")) {
+              const dataStr = line.startsWith("data: ")
+                ? line.slice(6)
+                : line.slice(5);
+              if (dataStr.trim()) {
+                try {
+                  pushMessage(JSON.parse(dataStr) as AnyMessage);
+                } catch {
+                  // ignore malformed JSON
+                }
               }
             }
           }
@@ -49,10 +72,22 @@ export function createHttpStream(serverUrl: string): Stream {
       }
     } catch (e: unknown) {
       if (e instanceof DOMException && e.name === "AbortError") return;
+      throw e;
     }
   }
 
-  let isFirstRequest = true;
+  function isJsonRpcRequest(msg: AnyMessage): boolean {
+    return (
+      "method" in msg &&
+      "id" in msg &&
+      msg.id !== undefined &&
+      msg.id !== null
+    );
+  }
+
+  function isInitializeRequest(msg: AnyMessage): boolean {
+    return isJsonRpcRequest(msg) && "method" in msg && msg.method === "initialize";
+  }
 
   const readable = new ReadableStream<AnyMessage>({
     async pull(controller) {
@@ -65,54 +100,66 @@ export function createHttpStream(serverUrl: string): Stream {
 
   const writable = new WritableStream<AnyMessage>({
     async write(msg) {
-      const isRequest =
-        "method" in msg &&
-        "id" in msg &&
-        msg.id !== undefined &&
-        msg.id !== null;
-
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
         Accept: "application/json, text/event-stream",
       };
-      if (sessionId) {
-        headers[ACP_SESSION_HEADER] = sessionId;
+      if (connectionId) {
+        headers[ACP_CONNECTION_HEADER] = connectionId;
       }
 
-      if (isFirstRequest && isRequest) {
-        isFirstRequest = false;
-
+      if (isInitializeRequest(msg)) {
+        // Initialize: no Acp-Connection-Id, returns SSE with the header.
         const response = await fetch(`${serverUrl}/acp`, {
           method: "POST",
           headers,
           body: JSON.stringify(msg),
-          signal: sseAbort.signal,
+          signal: abortController.signal,
         });
 
-        const sid = response.headers.get(ACP_SESSION_HEADER);
-        if (sid) sessionId = sid;
+        const connId = response.headers.get(ACP_CONNECTION_HEADER);
+        if (connId) connectionId = connId;
 
-        consumeSSE(response);
-      } else if (isRequest) {
-        const abort = new AbortController();
-        fetch(`${serverUrl}/acp`, {
+        await consumeSSE(response, abortController.signal);
+      } else if (isJsonRpcRequest(msg)) {
+        // JSON-RPC request: returns a per-request SSE stream.
+        const response = await fetch(`${serverUrl}/acp`, {
           method: "POST",
           headers,
           body: JSON.stringify(msg),
-          signal: abort.signal,
-        }).catch(() => {});
-        setTimeout(() => abort.abort(), 200);
+          signal: abortController.signal,
+        });
+
+        // session/new, session/load, session/fork may return Acp-Session-Id
+        const sessionId = response.headers.get(ACP_SESSION_HEADER);
+        if (sessionId) {
+          // Informational — the SDK tracks sessionId in the response body.
+        }
+
+        await consumeSSE(response, abortController.signal);
       } else {
+        // Notification or client response: fire-and-forget, expect 202.
         await fetch(`${serverUrl}/acp`, {
           method: "POST",
           headers,
           body: JSON.stringify(msg),
+          signal: abortController.signal,
         });
       }
     },
 
     close() {
-      sseAbort.abort();
+      // Terminate the connection.
+      if (connectionId) {
+        const headers: Record<string, string> = {
+          [ACP_CONNECTION_HEADER]: connectionId,
+        };
+        fetch(`${serverUrl}/acp`, {
+          method: "DELETE",
+          headers,
+        }).catch(() => {});
+      }
+      abortController.abort();
     },
   });
 
