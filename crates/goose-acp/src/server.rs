@@ -1691,6 +1691,43 @@ impl GooseAcpAgent {
             .get_session_agent(&thread_id, Some(cancel_token.clone()))
             .await?;
 
+        // Handle edit/retry truncation — if the client requests it via _meta,
+        // truncate both storage layers before appending the new message.
+        // The two tables use different ID schemes (tmsg_ vs msg_), so we use
+        // a timestamp bridge: truncate thread_messages by message_id to get
+        // the timestamp, then truncate messages by that timestamp.
+        if let Some(truncate_id) = args
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("truncate_before_message_id"))
+            .and_then(|v| v.as_str())
+        {
+            let (rows_deleted, created_ts) = self
+                .thread_manager
+                .truncate_from_message(&thread_id, truncate_id)
+                .await
+                .map_err(|e| {
+                    sacp::Error::internal_error().data(format!("Failed to truncate thread: {}", e))
+                })?;
+
+            if created_ts > 0 {
+                self.session_manager
+                    .truncate_conversation(&internal_session_id, created_ts)
+                    .await
+                    .map_err(|e| {
+                        sacp::Error::internal_error()
+                            .data(format!("Failed to truncate session: {}", e))
+                    })?;
+            }
+
+            tracing::info!(
+                thread_id = %thread_id,
+                truncate_id = %truncate_id,
+                rows_deleted = rows_deleted,
+                "Truncated conversation for edit/retry"
+            );
+        }
+
         let user_message = self.convert_acp_prompt_to_message(args.prompt);
 
         self.thread_manager

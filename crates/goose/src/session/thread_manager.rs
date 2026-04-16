@@ -378,6 +378,43 @@ impl ThreadManager {
         self.get_thread(&new_id).await
     }
 
+    /// Truncate a thread from a specific message onward (inclusive).
+    /// Returns (rows_deleted, created_timestamp) so callers can bridge
+    /// into session-level truncation which uses timestamps.
+    pub async fn truncate_from_message(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+    ) -> Result<(u64, i64)> {
+        let pool = self.storage.pool().await?;
+
+        // Find the target message's autoincrement id and timestamp
+        let row = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT id, created_timestamp FROM thread_messages WHERE thread_id = ? AND message_id = ? LIMIT 1",
+        )
+        .bind(thread_id)
+        .bind(message_id)
+        .fetch_optional(pool)
+        .await?;
+
+        let Some((row_id, created_ts)) = row else {
+            return Ok((0, 0));
+        };
+
+        let result = sqlx::query("DELETE FROM thread_messages WHERE thread_id = ? AND id >= ?")
+            .bind(thread_id)
+            .bind(row_id)
+            .execute(pool)
+            .await?;
+
+        sqlx::query("UPDATE threads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(thread_id)
+            .execute(pool)
+            .await?;
+
+        Ok((result.rows_affected(), created_ts))
+    }
+
     pub async fn list_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         let pool = self.storage.pool().await?;
         let rows = sqlx::query_as::<_, (Option<String>, String, Option<String>, String, i64, String)>(
