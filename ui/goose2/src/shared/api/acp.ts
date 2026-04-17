@@ -78,6 +78,22 @@ export async function acpPrepareSession(
   );
 }
 
+/** True if a `prepareSession` call for this session is currently awaiting the backend. */
+export function acpIsPrepareInFlight(
+  sessionId: string,
+  personaId?: string,
+): boolean {
+  return sessionTracker.isPrepareInFlight(sessionId, personaId);
+}
+
+/** True if this session has completed its initial backend prepare at least once. */
+export function acpIsSessionPrepared(
+  sessionId: string,
+  personaId?: string,
+): boolean {
+  return sessionTracker.isSessionPrepared(sessionId, personaId);
+}
+
 export async function acpSetModel(
   sessionId: string,
   modelId: string,

@@ -217,8 +217,29 @@ export function ChatView({
       const cached = sessionStore.getCachedModels(providerId);
       sessionStore.switchSessionProvider(activeSessionId, providerId, cached);
       setGlobalSelectedProvider(providerId);
+
+      // Eagerly tell the backend about the new provider so it pushes the
+      // model list via config_option_update — otherwise the model picker
+      // stays on "Loading…" until the user sends a message.
+      if (effectiveWorkingDir) {
+        void acpPrepareSession(activeSessionId, providerId, {
+          workingDir: effectiveWorkingDir,
+          personaId: selectedPersonaId ?? undefined,
+        }).catch((error) => {
+          console.error(
+            "Failed to prepare ACP session on provider change:",
+            error,
+          );
+        });
+      }
     },
-    [activeSessionId, selectedProvider, setGlobalSelectedProvider],
+    [
+      activeSessionId,
+      selectedProvider,
+      setGlobalSelectedProvider,
+      effectiveWorkingDir,
+      selectedPersonaId,
+    ],
   );
 
   const handleProjectChange = useCallback(
@@ -427,10 +448,13 @@ export function ChatView({
   ]);
   const isStreaming = chatState === "streaming";
   const showIndicator =
+    chatState === "spinning_up" ||
     chatState === "thinking" ||
     chatState === "streaming" ||
     chatState === "waiting" ||
     chatState === "compacting";
+  const selectedProviderLabel =
+    providers.find((p) => p.id === selectedProvider)?.label ?? selectedProvider;
   const handleCreatePersona = useCallback(() => {
     useAgentStore.getState().openPersonaEditor();
   }, []);
@@ -474,11 +498,13 @@ export function ChatView({
                 key="loading-indicator"
                 chatState={
                   chatState as
+                    | "spinning_up"
                     | "thinking"
                     | "streaming"
                     | "waiting"
                     | "compacting"
                 }
+                providerName={selectedProviderLabel}
               />
             ) : null}
           </AnimatePresence>

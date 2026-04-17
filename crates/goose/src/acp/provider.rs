@@ -1308,7 +1308,7 @@ fn resolve_model_info(
         ))
     })?;
     let current = models.current_model_id.0.to_string();
-    let available = models
+    let available: Vec<String> = models
         .available_models
         .iter()
         .map(|am| am.model_id.0.to_string())

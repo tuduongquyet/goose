@@ -4,6 +4,7 @@ import type { Agent } from "./agents";
 // Chat state machine
 export type ChatState =
   | "idle"
+  | "spinning_up"
   | "thinking"
   | "streaming"
   | "waiting"

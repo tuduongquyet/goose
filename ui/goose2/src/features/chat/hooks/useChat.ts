@@ -12,6 +12,8 @@ import {
   acpCancelSession,
   acpPrepareSession,
   acpSetModel,
+  acpIsPrepareInFlight,
+  acpIsSessionPrepared,
 } from "@/shared/api/acp";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import {
@@ -133,6 +135,7 @@ export function useChat(
       const hasAttachments = (attachments?.length ?? 0) > 0;
       if (
         (!text.trim() && !hasAttachments) ||
+        chatState === "spinning_up" ||
         chatState === "streaming" ||
         chatState === "thinking"
       )
@@ -177,7 +180,6 @@ export function useChat(
         }
       }
       store.addMessage(sessionId, userMessage);
-      store.setChatState(sessionId, "thinking");
       store.setError(sessionId, null);
 
       // Promote draft to real backend session before first send
@@ -185,6 +187,14 @@ export function useChat(
       const session = sessionStore.getSession(sessionId);
       const wasDraft = !!session?.draft;
       const selectedModelId = session?.modelId;
+
+      const personaId = effectivePersonaInfo?.id;
+      const needsPrepare =
+        wasDraft || !acpIsSessionPrepared(sessionId, personaId);
+      const prepareInFlight = acpIsPrepareInFlight(sessionId, personaId);
+      const initialState =
+        needsPrepare || prepareInFlight ? "spinning_up" : "thinking";
+      store.setChatState(sessionId, initialState);
 
       if (wasDraft) {
         sessionStore.promoteDraft(sessionId);
@@ -217,10 +227,10 @@ export function useChat(
       streamingPersonaIdRef.current = effectivePersonaInfo?.id ?? null;
 
       try {
-        if (wasDraft || selectedModelId) {
+        if (needsPrepare || prepareInFlight || selectedModelId) {
           await acpPrepareSession(sessionId, providerId, {
             workingDir: workingDirOverride,
-            personaId: effectivePersonaInfo?.id,
+            personaId,
           });
           if (selectedModelId) {
             await acpSetModel(sessionId, selectedModelId);

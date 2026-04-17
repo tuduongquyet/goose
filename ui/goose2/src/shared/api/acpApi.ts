@@ -121,7 +121,10 @@ export async function newSession(
   workingDir: string,
 ): Promise<NewSessionResponse> {
   const client = await getClient();
-  return client.newSession({ cwd: workingDir, mcpServers: [] });
+  return client.newSession({
+    cwd: workingDir,
+    mcpServers: [],
+  });
 }
 
 export async function loadSession(
@@ -129,7 +132,11 @@ export async function loadSession(
   workingDir: string,
 ): Promise<LoadSessionResponse> {
   const client = await getClient();
-  return client.loadSession({ sessionId, cwd: workingDir, mcpServers: [] });
+  return client.loadSession({
+    sessionId,
+    cwd: workingDir,
+    mcpServers: [],
+  });
 }
 
 export async function prompt(

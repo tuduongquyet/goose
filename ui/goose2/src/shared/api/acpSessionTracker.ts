@@ -8,6 +8,7 @@ interface PreparedSession {
 
 const prepared = new Map<string, PreparedSession>();
 const gooseToLocal = new Map<string, string>();
+const inFlight = new Map<string, Promise<string>>();
 
 function makeKey(sessionId: string, personaId?: string): string {
   if (personaId && personaId.length > 0) {
@@ -17,6 +18,28 @@ function makeKey(sessionId: string, personaId?: string): string {
 }
 
 export async function prepareSession(
+  sessionId: string,
+  providerId: string,
+  workingDir: string,
+  personaId?: string,
+): Promise<string> {
+  const key = makeKey(sessionId, personaId);
+
+  const inFlightExisting = inFlight.get(key);
+  if (inFlightExisting) {
+    return inFlightExisting;
+  }
+
+  const promise = doPrepareSession(sessionId, providerId, workingDir, personaId);
+  inFlight.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlight.delete(key);
+  }
+}
+
+async function doPrepareSession(
   sessionId: string,
   providerId: string,
   workingDir: string,
@@ -49,13 +72,30 @@ export async function prepareSession(
     gooseSessionId = response.sessionId;
   }
 
-  await acpApi.setProvider(gooseSessionId, providerId);
-
-  prepared.set(key, { gooseSessionId, providerId, workingDir });
-  prepared.set(sessionId, { gooseSessionId, providerId, workingDir });
+  const entry = { gooseSessionId, providerId, workingDir };
+  prepared.set(key, entry);
+  prepared.set(sessionId, entry);
   gooseToLocal.set(gooseSessionId, sessionId);
 
+  await acpApi.setProvider(gooseSessionId, providerId);
+
   return gooseSessionId;
+}
+
+export function isPrepareInFlight(
+  sessionId: string,
+  personaId?: string,
+): boolean {
+  const key = makeKey(sessionId, personaId);
+  return inFlight.has(key) || inFlight.has(sessionId);
+}
+
+export function isSessionPrepared(
+  sessionId: string,
+  personaId?: string,
+): boolean {
+  const key = makeKey(sessionId, personaId);
+  return prepared.has(key) || prepared.has(sessionId);
 }
 
 export function getGooseSessionId(

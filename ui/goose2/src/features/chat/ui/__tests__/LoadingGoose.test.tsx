@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { LoadingGoose } from "../LoadingGoose";
 import chat from "@/shared/i18n/locales/en/chat.json";
 
-const { thinking, responding } = chat.loading;
+const { thinking, responding, spinningUpFallback } = chat.loading;
 
 describe("LoadingGoose", () => {
   it("renders thinking copy for the thinking state", () => {
@@ -34,5 +34,23 @@ describe("LoadingGoose", () => {
     const { container } = render(<LoadingGoose chatState="idle" />);
 
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the provider name in the spinning_up state", () => {
+    render(
+      <LoadingGoose chatState="spinning_up" providerName="Claude Code" />,
+    );
+
+    expect(
+      screen.getByRole("status", { name: /Spinning up Claude Code/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to a generic message when no provider name is given", () => {
+    render(<LoadingGoose chatState="spinning_up" />);
+
+    expect(
+      screen.getByRole("status", { name: spinningUpFallback }),
+    ).toBeInTheDocument();
   });
 });

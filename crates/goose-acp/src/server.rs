@@ -1,5 +1,6 @@
 use crate::custom_requests::*;
 use crate::fs::AcpTools;
+use crate::model_cache::ModelCache;
 use crate::tools::AcpAwareToolMeta;
 use anyhow::Result;
 use fs_err as fs;
@@ -126,6 +127,16 @@ pub struct GooseAcpAgent {
     permission_manager: Arc<PermissionManager>,
     goose_mode: GooseMode,
     disable_session_naming: bool,
+    /// Keeps successfully-created providers alive across session/provider switches.
+    /// External ACP providers (claude-acp, codex, cursor-agent) own a long-lived
+    /// subprocess that takes ~25s to spin up on cold start; reusing the same
+    /// `Arc<dyn Provider>` skips that entirely. Keyed by provider name; entries
+    /// are never evicted for the lifetime of the agent.
+    provider_cache: Arc<Mutex<HashMap<String, Arc<dyn Provider>>>>,
+    /// Disk-persisted snapshot of the most recent model lists per provider.
+    /// Lets the UI fill the model picker instantly while the real
+    /// `update_provider` continues in the background.
+    model_cache: Arc<Mutex<ModelCache>>,
 }
 
 fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
@@ -615,6 +626,7 @@ impl GooseAcpAgent {
         ));
         let permission_manager = Arc::new(PermissionManager::new(config_dir.clone()));
 
+        let model_cache = ModelCache::load();
         Ok(Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             provider_factory,
@@ -627,7 +639,25 @@ impl GooseAcpAgent {
             permission_manager,
             goose_mode,
             disable_session_naming,
+            provider_cache: Arc::new(Mutex::new(HashMap::new())),
+            model_cache: Arc::new(Mutex::new(model_cache)),
         })
+    }
+
+    /// Returns a snapshot of the disk-cached model list for `provider_name`,
+    /// or `None` if there's no cached entry yet.
+    pub async fn cached_model_options(
+        &self,
+        provider_name: &str,
+    ) -> Option<Vec<SessionConfigOption>> {
+        let cache = self.model_cache.lock().await;
+        cache.get(provider_name).map(|e| e.options.clone())
+    }
+
+    /// Returns the most-recently-used provider name from the disk cache.
+    pub async fn last_used_provider(&self) -> Option<String> {
+        let cache = self.model_cache.lock().await;
+        cache.last_used_provider()
     }
 
     fn load_config(&self) -> Result<Config> {
@@ -641,6 +671,31 @@ impl GooseAcpAgent {
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
         (self.provider_factory)(provider_name.to_string(), model_config, extensions).await
+    }
+
+    /// Returns a cached provider when available, otherwise constructs a new one
+    /// via `create_provider` and stores it. The cache is keyed by provider name
+    /// only — see the `provider_cache` field doc for the trade-off.
+    pub(crate) async fn get_or_create_provider(
+        &self,
+        provider_name: &str,
+        model_config: goose::model::ModelConfig,
+        extensions: Vec<ExtensionConfig>,
+    ) -> Result<Arc<dyn Provider>> {
+        {
+            let cache = self.provider_cache.lock().await;
+            if let Some(provider) = cache.get(provider_name) {
+                return Ok(Arc::clone(provider));
+            }
+        }
+        let provider = self
+            .create_provider(provider_name, model_config, extensions)
+            .await?;
+        let mut cache = self.provider_cache.lock().await;
+        let entry = cache
+            .entry(provider_name.to_string())
+            .or_insert_with(|| Arc::clone(&provider));
+        Ok(Arc::clone(entry))
     }
 
     fn spawn_agent_setup(
@@ -673,6 +728,7 @@ impl GooseAcpAgent {
             .unwrap_or_default();
         let client_terminal = self.client_terminal.get().copied().unwrap_or(false);
         let provider_factory = Arc::clone(&self.provider_factory);
+        let provider_cache = Arc::clone(&self.provider_cache);
         let disable_session_naming = self.disable_session_naming;
 
         tokio::spawn(async move {
@@ -787,9 +843,25 @@ impl GooseAcpAgent {
                     Some(&goose_session.extension_data),
                     &config,
                 );
-                let provider = provider_factory(provider_name.to_string(), model_config, ext_state)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let provider = {
+                    let cached = {
+                        let cache = provider_cache.lock().await;
+                        cache.get(&provider_name).map(Arc::clone)
+                    };
+                    match cached {
+                        Some(p) => p,
+                        None => {
+                            let p = provider_factory(provider_name.to_string(), model_config, ext_state)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            let mut cache = provider_cache.lock().await;
+                            cache
+                                .entry(provider_name.clone())
+                                .or_insert_with(|| Arc::clone(&p));
+                            p
+                        }
+                    }
+                };
                 agent
                     .update_provider(provider.clone(), &goose_session.id)
                     .await
@@ -1810,7 +1882,7 @@ impl GooseAcpAgent {
             })?
             .with_canonical_limits(&provider_name);
         let provider = self
-            .create_provider(&provider_name, model_config, extensions)
+            .get_or_create_provider(&provider_name, model_config, extensions)
             .await
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to create provider: {}", e))
@@ -1979,7 +2051,7 @@ impl GooseAcpAgent {
         let extensions =
             EnabledExtensionsState::for_session(&self.session_manager, &internal_id, &config).await;
         let new_provider = self
-            .create_provider(&resolved_provider_name, model_config, extensions)
+            .get_or_create_provider(&resolved_provider_name, model_config, extensions)
             .await
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Failed to create provider: {}", e))
@@ -2040,6 +2112,19 @@ impl GooseAcpAgent {
         let (_, config_options) = self
             .build_config_update(&SessionId::new(thread_id.to_string()))
             .await?;
+
+        {
+            let mut cache = self.model_cache.lock().await;
+            cache.upsert(&resolved_provider_name, config_options.clone());
+            if let Err(e) = cache.save() {
+                warn!(
+                    provider = %resolved_provider_name,
+                    error = %e,
+                    "failed to persist ACP model cache",
+                );
+            }
+        }
+
         Ok(config_options)
     }
 
@@ -2742,9 +2827,21 @@ impl HandleDispatchFrom<Client> for GooseAcpHandler {
                         let session_id = req.session_id.clone();
                         match req.config_id.0.as_ref() {
                             "provider" => {
+                                if let Some(cached_options) = agent.cached_model_options(&value_id.0).await {
+                                    let cached_notification = SessionNotification::new(
+                                        session_id.clone(),
+                                        SessionUpdate::ConfigOptionUpdate(
+                                            ConfigOptionUpdate::new(cached_options),
+                                        ),
+                                    );
+                                    cx.send_notification(cached_notification)?;
+                                }
                                 match agent.update_provider(&session_id.0, &value_id.0, None, None, None).await {
                                     Ok(_) => {}
-                                    Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
+                                    Err(e) => {
+                                        responder.respond_with_error(e)?;
+                                        return Ok(());
+                                    }
                                 }
                             }
                             "mode" => {
@@ -3403,5 +3500,59 @@ print(\"hello, world\")
         model_state: SessionModelState,
     ) -> Vec<SessionConfigOption> {
         build_config_options(&mode_state, &model_state, provider_name, provider_options)
+    }
+
+    #[tokio::test]
+    async fn provider_cache_only_invokes_factory_once_per_name() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let factory_calls = Arc::clone(&calls);
+        let provider_factory: AcpProviderFactory =
+            Arc::new(move |_name, _model_config, _extensions| {
+                let factory_calls = Arc::clone(&factory_calls);
+                Box::pin(async move {
+                    factory_calls.fetch_add(1, Ordering::SeqCst);
+                    let provider: Arc<dyn Provider> = Arc::new(MockModelProvider {
+                        models: Ok(vec!["model-a".into()]),
+                    });
+                    Ok(provider)
+                })
+            });
+
+        let tmp = tempfile::tempdir().unwrap();
+        let agent = GooseAcpAgent::new(
+            provider_factory,
+            Vec::new(),
+            tmp.path().to_path_buf(),
+            tmp.path().to_path_buf(),
+            GooseMode::Auto,
+            true,
+        )
+        .await
+        .unwrap();
+
+        let cfg = goose::model::ModelConfig::new_or_fail("model-a");
+        let p1 = agent
+            .get_or_create_provider("claude-acp", cfg.clone(), Vec::new())
+            .await
+            .unwrap();
+        let p2 = agent
+            .get_or_create_provider("claude-acp", cfg.clone(), Vec::new())
+            .await
+            .unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "factory should be invoked exactly once");
+        assert!(Arc::ptr_eq(&p1, &p2), "second call should return the cached Arc");
+
+        let _p3 = agent
+            .get_or_create_provider("codex", cfg, Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "different provider name should trigger a fresh factory call"
+        );
     }
 }

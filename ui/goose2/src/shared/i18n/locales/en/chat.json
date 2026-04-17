@@ -112,7 +112,9 @@
   },
   "loading": {
     "thinking": "Thinking...",
-    "responding": "Responding..."
+    "responding": "Responding...",
+    "spinningUp": "Spinning up {{providerName}}...",
+    "spinningUpFallback": "Spinning up..."
   },
   "mention": {
     "ariaLabel": "Mention suggestions",

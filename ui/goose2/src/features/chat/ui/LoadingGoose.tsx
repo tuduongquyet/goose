@@ -4,6 +4,7 @@ import { Shimmer } from "@/shared/ui/ai-elements/shimmer";
 
 export type LoadingChatState =
   | "idle"
+  | "spinning_up"
   | "thinking"
   | "streaming"
   | "waiting"
@@ -11,6 +12,11 @@ export type LoadingChatState =
 
 interface LoadingGooseProps {
   chatState?: LoadingChatState;
+  /**
+   * Display name of the provider being warmed up. Only used when
+   * `chatState === "spinning_up"`. Falls back to a generic message when absent.
+   */
+  providerName?: string;
 }
 
 const LOADING_FADE_S = 0.45;
@@ -20,7 +26,7 @@ const LOADING_SHIMMER_DELAY_S = 0.35;
 const LOADING_SHIMMER_REPEAT_DELAY_S = 0.9;
 
 const MESSAGE_KEY_BY_STATE: Record<
-  Exclude<LoadingChatState, "idle">,
+  Exclude<LoadingChatState, "idle" | "spinning_up">,
   "thinking" | "responding"
 > = {
   thinking: "thinking",
@@ -29,14 +35,22 @@ const MESSAGE_KEY_BY_STATE: Record<
   compacting: "responding",
 };
 
-export function LoadingGoose({ chatState = "idle" }: LoadingGooseProps) {
+export function LoadingGoose({
+  chatState = "idle",
+  providerName,
+}: LoadingGooseProps) {
   const { t } = useTranslation("chat");
   const shouldReduceMotion = useReducedMotion();
   if (chatState === "idle") {
     return null;
   }
 
-  const message = t(`loading.${MESSAGE_KEY_BY_STATE[chatState]}`);
+  const message =
+    chatState === "spinning_up"
+      ? providerName
+        ? t("loading.spinningUp", { providerName })
+        : t("loading.spinningUpFallback")
+      : t(`loading.${MESSAGE_KEY_BY_STATE[chatState]}`);
 
   return (
     <motion.div

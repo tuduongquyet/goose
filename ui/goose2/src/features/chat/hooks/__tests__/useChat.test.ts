@@ -9,12 +9,16 @@ const mockAcpSendMessage = vi.fn();
 const mockAcpCancelSession = vi.fn();
 const mockAcpPrepareSession = vi.fn();
 const mockAcpSetModel = vi.fn();
+const mockAcpIsPrepareInFlight = vi.fn(() => false);
+const mockAcpIsSessionPrepared = vi.fn(() => false);
 
 vi.mock("@/shared/api/acp", () => ({
   acpSendMessage: (...args: unknown[]) => mockAcpSendMessage(...args),
   acpCancelSession: (...args: unknown[]) => mockAcpCancelSession(...args),
   acpPrepareSession: (...args: unknown[]) => mockAcpPrepareSession(...args),
   acpSetModel: (...args: unknown[]) => mockAcpSetModel(...args),
+  acpIsPrepareInFlight: () => mockAcpIsPrepareInFlight(),
+  acpIsSessionPrepared: () => mockAcpIsSessionPrepared(),
 }));
 
 import { useChat } from "../useChat";
@@ -399,6 +403,56 @@ describe("useChat", () => {
     expect(runtime.error).toBe("Working directory missing");
     expect(runtime.streamingMessageId).toBeNull();
     expect(runtime.chatState).toBe("idle");
+  });
+
+  it("transitions chatState from spinning_up to streaming while awaiting prepare", async () => {
+    useChatSessionStore.setState({
+      sessions: [
+        {
+          id: "session-1",
+          title: "New Chat",
+          providerId: "claude-acp",
+          modelId: "opus",
+          modelName: "Opus",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messageCount: 0,
+          draft: true,
+        },
+      ],
+    });
+
+    const prepareDeferred = createDeferredPromise();
+    mockAcpPrepareSession.mockReturnValueOnce(prepareDeferred.promise);
+    const sendDeferred = createDeferredPromise();
+    mockAcpSendMessage.mockReturnValueOnce(sendDeferred.promise);
+
+    const { result } = renderHook(() => useChat("session-1", "claude-acp"));
+
+    let sendPromise!: Promise<void>;
+    await act(async () => {
+      sendPromise = result.current.sendMessage("Hello");
+      await Promise.resolve();
+    });
+
+    expect(useChatStore.getState().getSessionRuntime("session-1").chatState).toBe(
+      "spinning_up",
+    );
+
+    await act(async () => {
+      prepareDeferred.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(useChatStore.getState().getSessionRuntime("session-1").chatState).toBe(
+      "streaming",
+    );
+
+    sendDeferred.resolve();
+    await act(async () => {
+      await sendPromise;
+    });
   });
 
   it("shows string-shaped invoke errors instead of falling back to unknown error", async () => {

@@ -308,23 +308,31 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
       const configUpdate = update as SessionUpdate & {
         sessionUpdate: "config_option_update";
       };
-      if ("options" in configUpdate && Array.isArray(configUpdate.options)) {
-        const modelOption = configUpdate.options.find(
-          (opt: { category?: string; kind?: Record<string, unknown> }) =>
-            opt.category === "model",
-        );
-        if (modelOption?.kind?.type === "select") {
-          const select = modelOption.kind;
-          const currentModelId = select.currentValue;
-          const availableModels: Array<{ id: string; name: string }> = [];
 
-          if (select.options?.type === "ungrouped") {
-            for (const v of select.options.values) {
-              availableModels.push({ id: v.value, name: v.name });
-            }
-          } else if (select.options?.type === "grouped") {
-            for (const group of select.options.groups) {
-              for (const v of group.options) {
+      if (Array.isArray(configUpdate.configOptions)) {
+        type SelectOption = { value: string; name: string };
+        type SelectGroup = { group: string; name: string; options: SelectOption[] };
+        type ModelConfigOption = {
+          category?: string;
+          type?: string;
+          currentValue?: string;
+          options?: Array<SelectOption | SelectGroup>;
+        };
+
+        const modelOption = (
+          configUpdate.configOptions as ModelConfigOption[]
+        ).find((opt) => opt.category === "model");
+
+        if (modelOption?.type === "select") {
+          const currentModelId = modelOption.currentValue ?? "";
+          const availableModels: Array<{ id: string; name: string }> = [];
+          const rawOptions = modelOption.options ?? [];
+
+          for (const entry of rawOptions) {
+            if ("value" in entry) {
+              availableModels.push({ id: entry.value, name: entry.name });
+            } else if ("options" in entry) {
+              for (const v of entry.options) {
                 availableModels.push({ id: v.value, name: v.name });
               }
             }

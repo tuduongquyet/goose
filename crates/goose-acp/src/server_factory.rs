@@ -49,6 +49,35 @@ impl AcpServer {
         .await?;
         info!("Created new ACP agent");
 
-        Ok(Arc::new(agent))
+        let agent = Arc::new(agent);
+        spawn_provider_prewarm(Arc::clone(&agent));
+        Ok(agent)
     }
+}
+
+/// Best-effort background warm-up of the most-recently-used provider so the
+/// user doesn't pay the cold-start cost on the first agent click after launch.
+fn spawn_provider_prewarm(agent: Arc<GooseAcpAgent>) {
+    tokio::spawn(async move {
+        let Some(provider_name) = agent.last_used_provider().await else {
+            return;
+        };
+
+        let providers = goose::providers::providers().await;
+        let Some((metadata, _)) = providers
+            .into_iter()
+            .find(|(m, _)| m.name == provider_name)
+        else {
+            return;
+        };
+
+        let Ok(model_config) = goose::model::ModelConfig::new(&metadata.default_model) else {
+            return;
+        };
+        let model_config = model_config.with_canonical_limits(&provider_name);
+
+        let _ = agent
+            .get_or_create_provider(&provider_name, model_config, Vec::new())
+            .await;
+    });
 }
