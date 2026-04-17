@@ -382,7 +382,7 @@ export const MessageBubble = memo(function MessageBubble({
       if (e.key === "Escape") {
         e.preventDefault();
         onCancelEdit?.();
-      } else if (e.key === "Enter" && !e.shiftKey) {
+      } else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         handleEditSave();
       }

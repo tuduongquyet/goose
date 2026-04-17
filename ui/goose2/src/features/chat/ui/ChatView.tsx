@@ -451,6 +451,9 @@ export function ChatView({
       // Local truncation for immediate UI feedback.
       store.setMessages(activeSessionId, allMessages.slice(0, editIndex));
       store.setEditingMessageId(activeSessionId, null);
+      // Dismiss any queued follow-up before forcing idle — otherwise
+      // useMessageQueue would auto-send it against the truncated timeline.
+      store.dismissQueuedMessage(activeSessionId);
       store.setChatState(activeSessionId, "idle");
 
       if (wasIdle) {
