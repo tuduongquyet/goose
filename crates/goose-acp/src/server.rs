@@ -1725,7 +1725,7 @@ impl GooseAcpAgent {
                     })?;
             }
 
-            tracing::info!(
+            tracing::debug!(
                 thread_id = %thread_id,
                 truncate_id = %truncate_id,
                 rows_deleted = rows_deleted,
