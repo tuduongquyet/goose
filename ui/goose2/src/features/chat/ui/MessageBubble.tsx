@@ -32,6 +32,7 @@ import {
 } from "@/shared/ui/ai-elements/reasoning";
 import { ToolChainCards, type ToolChainItem } from "./ToolChainCards";
 import { ClickableImage } from "./ClickableImage";
+import { McpAppView } from "./McpAppView";
 import { useArtifactLinkHandler } from "@/features/chat/hooks/useArtifactLinkHandler";
 import type {
   Message,
@@ -39,6 +40,7 @@ import type {
   MessageContent,
   TextContent,
   ImageContent,
+  McpAppContent,
   ToolResponseContent,
   ThinkingContent,
   ReasoningContent as ReasoningContentType,
@@ -224,6 +226,10 @@ function renderContentBlock(
     case "toolResponse":
       // Handled by groupContentSections toolChain rendering
       return null;
+    case "mcpApp": {
+      const mcpApp = content as McpAppContent;
+      return <McpAppView key={`mcp-app-${index}`} payload={mcpApp.payload} />;
+    }
     case "thinking": {
       const th = content as ThinkingContent;
       return (
