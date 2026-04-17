@@ -387,9 +387,9 @@ async fn run_knowledge_extraction(
                 Err(_) => continue,
             };
 
-            let is_skill_write = SKILL_WRITE_TOOLS
-                .iter()
-                .any(|t| *t == tool_call.name.as_ref());
+            let tool_name_str = tool_call.name.to_string();
+            let is_skill_write = SKILL_WRITE_TOOLS.iter().any(|t| *t == tool_name_str);
+            let is_patch = tool_name_str == "patch_skill";
             let skill_name = if is_skill_write {
                 tool_call
                     .arguments
@@ -397,6 +397,20 @@ async fn run_knowledge_extraction(
                     .and_then(|a| a.get("name"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string())
+            } else {
+                None
+            };
+
+            // For patch_skill, capture the pre-patch SKILL.md so we can restore it
+            // on adversary BLOCK instead of deleting the whole (pre-existing) skill.
+            let pre_patch_content: Option<String> = if is_patch {
+                skill_name.as_ref().and_then(|name| {
+                    let path = crate::config::paths::Paths::config_dir()
+                        .join("skills")
+                        .join(name)
+                        .join("SKILL.md");
+                    std::fs::read_to_string(&path).ok()
+                })
             } else {
                 None
             };
@@ -426,6 +440,11 @@ async fn run_knowledge_extraction(
                             if !adversary_review_skill(provider, &model_config, session_id, name)
                                 .await
                             {
+                                rollback_blocked_skill_write(
+                                    name,
+                                    is_patch,
+                                    pre_patch_content.as_deref(),
+                                );
                                 let blocked_result = Ok(rmcp::model::CallToolResult::error(
                                     vec![rmcp::model::Content::text(format!(
                                         "Skill '{}' was blocked by security review and rolled back.",
@@ -520,11 +539,6 @@ async fn adversary_review_skill(
                     skill_name,
                     reason.trim()
                 );
-                // Rollback: delete the skill directory
-                let skill_dir = Paths::config_dir().join("skills").join(skill_name);
-                if let Err(e) = std::fs::remove_dir_all(&skill_dir) {
-                    warn!("Failed to rollback blocked skill '{}': {}", skill_name, e);
-                }
                 false
             } else {
                 debug!("Adversary review ALLOWED skill '{}'", skill_name);
@@ -536,6 +550,33 @@ async fn adversary_review_skill(
             debug!("Adversary skill review failed (allowing): {}", e);
             true
         }
+    }
+}
+
+/// Roll back a blocked skill write. For newly created skills (`create_skill`), the
+/// entire skill directory is removed. For `patch_skill`, only the patched
+/// `SKILL.md` is reverted to its pre-patch content so pre-existing supporting
+/// files are not lost on a false-positive BLOCK.
+fn rollback_blocked_skill_write(skill_name: &str, is_patch: bool, pre_patch_content: Option<&str>) {
+    use crate::config::paths::Paths;
+    let skill_dir = Paths::config_dir().join("skills").join(skill_name);
+    if is_patch {
+        if let Some(prev) = pre_patch_content {
+            let skill_md = skill_dir.join("SKILL.md");
+            if let Err(e) = std::fs::write(&skill_md, prev) {
+                warn!(
+                    "Failed to restore pre-patch SKILL.md for '{}': {}",
+                    skill_name, e
+                );
+            }
+        } else {
+            warn!(
+                "No pre-patch content captured for '{}'; leaving SKILL.md as-is",
+                skill_name
+            );
+        }
+    } else if let Err(e) = std::fs::remove_dir_all(&skill_dir) {
+        warn!("Failed to rollback blocked skill '{}': {}", skill_name, e);
     }
 }
 
