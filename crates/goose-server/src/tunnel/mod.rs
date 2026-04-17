@@ -113,9 +113,7 @@ impl TunnelManager {
     }
 
     fn get_auto_start() -> bool {
-        Config::global()
-            .get_param("tunnel_auto_start")
-            .unwrap_or(false)
+        Config::global().get_tunnel_auto_start().unwrap_or(false)
     }
 
     fn get_secret() -> Option<String> {
@@ -200,7 +198,7 @@ impl TunnelManager {
 
     pub fn set_auto_start(auto_start: bool) -> anyhow::Result<()> {
         Config::global()
-            .set_param("tunnel_auto_start", auto_start)
+            .set_tunnel_auto_start(auto_start)
             .map_err(|e| anyhow::anyhow!("Failed to save tunnel config: {}", e))
     }
 

@@ -364,8 +364,7 @@ impl Agent {
             self.tool_inspection_manager.apply_tool_annotations(&tools);
         }
 
-        let tool_call_cut_off = match Config::global().get_param::<usize>("GOOSE_TOOL_CALL_CUTOFF")
-        {
+        let tool_call_cut_off = match Config::global().get_goose_tool_call_cutoff() {
             Ok(v) => v,
             Err(_) => {
                 let context_limit = self
@@ -374,7 +373,7 @@ impl Agent {
                     .map(|p| p.get_model_config().context_limit())
                     .unwrap_or(crate::model::DEFAULT_CONTEXT_LIMIT);
                 let compaction_threshold = Config::global()
-                    .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+                    .get_goose_auto_compact_threshold()
                     .unwrap_or(crate::context_mgmt::DEFAULT_COMPACTION_THRESHOLD);
                 crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
             }
@@ -1111,7 +1110,7 @@ impl Agent {
             } else {
                 let config = Config::global();
                 let threshold = config
-                    .get_param::<f64>("GOOSE_AUTO_COMPACT_THRESHOLD")
+                    .get_goose_auto_compact_threshold()
                     .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
                 let threshold_percentage = (threshold * 100.0) as u32;
 
@@ -1226,7 +1225,7 @@ impl Agent {
             let mut turns_taken = 0u32;
             let max_turns = session_config.max_turns.unwrap_or_else(|| {
                 Config::global()
-                    .get_param::<u32>("GOOSE_MAX_TURNS")
+                    .get_goose_max_turns()
                     .unwrap_or(DEFAULT_MAX_TURNS)
             });
             let mut compaction_attempts = 0;

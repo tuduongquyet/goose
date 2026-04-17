@@ -91,7 +91,7 @@ impl BedrockProvider {
         };
 
         // Get AWS_REGION from config if explicitly set (optional - SDK can resolve from other sources)
-        let region = match config.get_param::<String>("AWS_REGION") {
+        let region = match config.get_aws_region() {
             Ok(r) if !r.is_empty() => Some(r),
             Ok(_) => None,
             Err(_) => None,
@@ -100,7 +100,7 @@ impl BedrockProvider {
         // Use load_defaults() which supports AWS SSO, profiles, and environment variables
         let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest());
 
-        if let Ok(profile_name) = config.get_param::<String>("AWS_PROFILE") {
+        if let Ok(profile_name) = config.get_aws_profile() {
             if !profile_name.is_empty() {
                 loader = loader.profile_name(&profile_name);
             }
@@ -166,19 +166,19 @@ impl BedrockProvider {
 
     fn load_retry_config(config: &crate::config::Config) -> RetryConfig {
         let max_retries = config
-            .get_param::<usize>("BEDROCK_MAX_RETRIES")
+            .get_bedrock_max_retries()
             .unwrap_or(BEDROCK_DEFAULT_MAX_RETRIES);
 
         let initial_interval_ms = config
-            .get_param::<u64>("BEDROCK_INITIAL_RETRY_INTERVAL_MS")
+            .get_bedrock_initial_retry_interval_ms()
             .unwrap_or(BEDROCK_DEFAULT_INITIAL_RETRY_INTERVAL_MS);
 
         let backoff_multiplier = config
-            .get_param::<f64>("BEDROCK_BACKOFF_MULTIPLIER")
+            .get_bedrock_backoff_multiplier()
             .unwrap_or(BEDROCK_DEFAULT_BACKOFF_MULTIPLIER);
 
         let max_interval_ms = config
-            .get_param::<u64>("BEDROCK_MAX_RETRY_INTERVAL_MS")
+            .get_bedrock_max_retry_interval_ms()
             .unwrap_or(BEDROCK_DEFAULT_MAX_RETRY_INTERVAL_MS);
 
         RetryConfig::new(
@@ -192,9 +192,7 @@ impl BedrockProvider {
     fn should_enable_caching(&self) -> bool {
         let config = crate::config::Config::global();
 
-        let enabled = config
-            .get_param::<bool>("BEDROCK_ENABLE_CACHING")
-            .unwrap_or(false);
+        let enabled = config.get_bedrock_enable_caching().unwrap_or(false);
         enabled && self.model.model_name.contains("anthropic.claude")
     }
 

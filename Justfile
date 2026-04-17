@@ -17,6 +17,8 @@ check-everything:
     cd ui/desktop && pnpm run lint:check
     @echo "  → Validating OpenAPI schema..."
     ./scripts/check-openapi-schema.sh
+    @echo "  → Validating config schema..."
+    just check-config-schema
     @echo ""
     @echo "✅ All style checks passed!"
 
@@ -225,6 +227,26 @@ generate-acp-types: generate-acp-schema
     @echo "Generating ACP TypeScript types..."
     cd ui/sdk && npx tsx generate-schema.ts
     @echo "ACP TypeScript types generated in ui/sdk/src/generated/"
+
+# Generate config.yaml JSON schema from Rust types
+generate-config-schema:
+    @echo "Generating config.yaml JSON schema..."
+    cargo run -p goose --bin generate_config_schema
+    @echo "Config schema generated: crates/goose/config.schema.json"
+
+# Check if config.yaml JSON schema is up-to-date
+check-config-schema: generate-config-schema
+    #!/usr/bin/env bash
+    set -e
+    echo "Checking config schema is up-to-date..."
+    if ! git diff --exit-code crates/goose/config.schema.json; then
+      echo ""
+      echo "Config schema is out of date!"
+      echo ""
+      echo "Run 'just generate-config-schema' locally, then commit the changes."
+      exit 1
+    fi
+    echo "Config schema is up-to-date"
 
 # Build SDK TypeScript package (schema + types + compile)
 build-sdk: generate-acp-types

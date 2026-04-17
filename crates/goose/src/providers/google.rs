@@ -72,7 +72,7 @@ impl GoogleProvider {
         let config = crate::config::Config::global();
         let api_key: String = config.get_secret("GOOGLE_API_KEY")?;
         let host: String = config
-            .get_param("GOOGLE_HOST")
+            .get_google_host()
             .unwrap_or_else(|_| GOOGLE_API_HOST.to_string());
 
         let auth = AuthMethod::ApiKey {

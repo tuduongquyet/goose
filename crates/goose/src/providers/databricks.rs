@@ -145,7 +145,7 @@ impl DatabricksProvider {
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
         let config = crate::config::Config::global();
 
-        let mut host: Result<String, ConfigError> = config.get_param("DATABRICKS_HOST");
+        let mut host: Result<String, ConfigError> = config.get_databricks_host();
         if host.is_err() {
             host = config.get_secret("DATABRICKS_HOST")
         }
@@ -198,25 +198,25 @@ impl DatabricksProvider {
 
     fn load_retry_config(config: &crate::config::Config) -> RetryConfig {
         let max_retries = config
-            .get_param("DATABRICKS_MAX_RETRIES")
+            .get_databricks_max_retries()
             .ok()
             .and_then(|v: String| v.parse::<usize>().ok())
             .unwrap_or(DEFAULT_MAX_RETRIES);
 
         let initial_interval_ms = config
-            .get_param("DATABRICKS_INITIAL_RETRY_INTERVAL_MS")
+            .get_databricks_initial_retry_interval_ms()
             .ok()
             .and_then(|v: String| v.parse::<u64>().ok())
             .unwrap_or(DEFAULT_INITIAL_RETRY_INTERVAL_MS);
 
         let backoff_multiplier = config
-            .get_param("DATABRICKS_BACKOFF_MULTIPLIER")
+            .get_databricks_backoff_multiplier()
             .ok()
             .and_then(|v: String| v.parse::<f64>().ok())
             .unwrap_or(DEFAULT_BACKOFF_MULTIPLIER);
 
         let max_interval_ms = config
-            .get_param("DATABRICKS_MAX_RETRY_INTERVAL_MS")
+            .get_databricks_max_retry_interval_ms()
             .ok()
             .and_then(|v: String| v.parse::<u64>().ok())
             .unwrap_or(DEFAULT_MAX_RETRY_INTERVAL_MS);
@@ -259,7 +259,7 @@ impl DatabricksProvider {
 
     fn resolve_instance_id() -> Option<String> {
         let enabled = crate::config::Config::global()
-            .get_param::<bool>("GOOSE_DATABRICKS_CLIENT_REQUEST_ID")
+            .get_goose_databricks_client_request_id()
             .unwrap_or(false);
         if enabled {
             Some(get_instance_id().to_string())

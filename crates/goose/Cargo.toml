@@ -242,6 +242,10 @@ path = "src/bin/analyze_cli.rs"
 name = "build_canonical_models"
 path = "src/providers/canonical/build_canonical_models.rs"
 
+[[bin]]
+name = "generate_config_schema"
+path = "src/bin/generate_config_schema.rs"
+
 [package.metadata.cargo-machete]
 
 ignored = [

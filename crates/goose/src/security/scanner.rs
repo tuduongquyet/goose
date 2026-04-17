@@ -114,7 +114,7 @@ impl PromptInjectionScanner {
 
     pub fn get_threshold_from_config(&self) -> f32 {
         Config::global()
-            .get_param::<f64>("SECURITY_PROMPT_THRESHOLD")
+            .get_security_prompt_threshold()
             .unwrap_or(0.8) as f32
     }
 

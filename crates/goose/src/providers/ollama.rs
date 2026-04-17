@@ -56,7 +56,7 @@ pub struct OllamaProvider {
 }
 fn resolve_ollama_num_ctx(model_config: &ModelConfig) -> Option<usize> {
     let config = crate::config::Config::global();
-    let input_limit = match config.get_param::<usize>("GOOSE_INPUT_LIMIT") {
+    let input_limit = match config.get_goose_input_limit() {
         Ok(limit) if limit > 0 => Some(limit),
         Ok(_) => None,
         Err(crate::config::ConfigError::NotFound(_)) => None,
@@ -71,7 +71,7 @@ fn resolve_ollama_num_ctx(model_config: &ModelConfig) -> Option<usize> {
 
 fn resolve_ollama_stream_usage() -> bool {
     let config = crate::config::Config::global();
-    match config.get_param::<bool>("OLLAMA_STREAM_USAGE") {
+    match config.get_ollama_stream_usage() {
         Ok(val) => val,
         // Key not set: default to true. Ollama supports stream_options since
         // mid-2025 and most installs benefit from token usage tracking.
@@ -126,11 +126,11 @@ impl OllamaProvider {
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
         let config = crate::config::Config::global();
         let host: String = config
-            .get_param("OLLAMA_HOST")
+            .get_ollama_host()
             .unwrap_or_else(|_| OLLAMA_HOST.to_string());
 
         let timeout: Duration =
-            Duration::from_secs(config.get_param("OLLAMA_TIMEOUT").unwrap_or(OLLAMA_TIMEOUT));
+            Duration::from_secs(config.get_ollama_timeout().unwrap_or(OLLAMA_TIMEOUT));
 
         let base = if host.starts_with("http://") || host.starts_with("https://") {
             host.clone()
@@ -383,17 +383,17 @@ const OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS: u64 = 120;
 fn resolve_ollama_chunk_timeout() -> u64 {
     let config = crate::config::Config::global();
 
-    if let Ok(val) = config.get_param::<u64>("OLLAMA_STREAM_TIMEOUT") {
+    if let Ok(val) = config.get_ollama_stream_timeout() {
         if val > 0 {
             return val;
         }
     }
-    if let Ok(val) = config.get_param::<u64>("GOOSE_STREAM_TIMEOUT") {
+    if let Ok(val) = config.get_goose_stream_timeout() {
         if val > 0 {
             return val;
         }
     }
-    match config.get_param::<u64>("OLLAMA_TIMEOUT") {
+    match config.get_ollama_timeout() {
         Ok(val) if val > 0 => val,
         _ => OLLAMA_DEFAULT_CHUNK_TIMEOUT_SECS,
     }

@@ -518,7 +518,7 @@ impl McpClientTrait for CodeExecutionClient {
 pub fn get_tool_disclosure() -> ToolDisclosure {
     let config = crate::config::Config::global();
     let tool_disclosure_str: String = config
-        .get_param("CODE_MODE_TOOL_DISCLOSURE")
+        .get_code_mode_tool_disclosure()
         .unwrap_or_else(|_| "catalog".to_string());
     serde_json::from_value(serde_json::json!(tool_disclosure_str)).unwrap_or_default()
 }

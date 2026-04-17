@@ -30,7 +30,6 @@ pub enum RecipeSource {
     GitHub,
 }
 
-pub const GOOSE_RECIPE_GITHUB_REPO_CONFIG_KEY: &str = "GOOSE_RECIPE_GITHUB_REPO";
 pub fn retrieve_recipe_from_github(
     recipe_name: &str,
     recipe_repo_full_name: &str,

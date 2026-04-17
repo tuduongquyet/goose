@@ -60,7 +60,7 @@ pub struct SnowflakeProvider {
 impl SnowflakeProvider {
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
         let config = crate::config::Config::global();
-        let mut host: Result<String, ConfigError> = config.get_param("SNOWFLAKE_HOST");
+        let mut host: Result<String, ConfigError> = config.get_snowflake_host();
         if host.is_err() {
             host = config.get_secret("SNOWFLAKE_HOST")
         }

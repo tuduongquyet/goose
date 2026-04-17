@@ -16,9 +16,6 @@ use uuid::Uuid;
 const POSTHOG_API_KEY: &str = "phc_RyX5CaY01VtZJCQyhSR5KFh6qimUy81YwxsEpotAftT";
 const POSTHOG_CAPTURE_URL: &str = "https://us.i.posthog.com/capture/";
 
-/// Config key for telemetry opt-out preference
-pub const TELEMETRY_ENABLED_KEY: &str = "GOOSE_TELEMETRY_ENABLED";
-
 static TELEMETRY_DISABLED_BY_ENV: Lazy<AtomicBool> = Lazy::new(|| {
     std::env::var("GOOSE_TELEMETRY_OFF")
         .map(|v| v == "1" || v.to_lowercase() == "true")
@@ -36,7 +33,7 @@ pub fn get_telemetry_choice() -> Option<bool> {
     }
 
     let config = Config::global();
-    config.get_param::<bool>(TELEMETRY_ENABLED_KEY).ok()
+    config.get_goose_telemetry_enabled().ok()
 }
 
 /// Check if telemetry is enabled.
@@ -417,7 +414,7 @@ async fn send_session_event(installation: &InstallationData) -> Result<(), Strin
     if let Ok(mode) = config.get_param::<String>("GOOSE_MODE") {
         insert(&mut props, "setting_mode", mode);
     }
-    if let Ok(max_turns) = config.get_param::<i64>("GOOSE_MAX_TURNS") {
+    if let Some(max_turns) = config.get_goose_max_turns().ok().map(|v| v as i64) {
         insert(&mut props, "setting_max_turns", max_turns);
     }
 

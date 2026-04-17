@@ -180,6 +180,14 @@ pub trait ConfigValue {
 
 macro_rules! config_value {
     ($key:ident, $type:ty) => {
+        const _: () = assert!(
+            crate::config::schema::GooseConfigSchema::has_key(stringify!($key)),
+            concat!(
+                "Config key ",
+                stringify!($key),
+                " is not registered in GooseConfigSchema"
+            )
+        );
         impl Config {
             pastey::paste! {
                 pub fn [<get_ $key:lower>](&self) -> Result<$type, ConfigError> {
@@ -1066,6 +1074,123 @@ config_value!(CLAUDE_THINKING_TYPE, String);
 config_value!(CLAUDE_THINKING_EFFORT, String);
 config_value!(CLAUDE_THINKING_BUDGET, i32);
 config_value!(GOOSE_DEFAULT_EXTENSION_TIMEOUT, u64);
+
+// Core Goose Settings
+config_value!(GOOSE_MAX_TOKENS, i32);
+config_value!(GOOSE_CONTEXT_LIMIT, usize);
+config_value!(GOOSE_INPUT_LIMIT, usize);
+config_value!(GOOSE_MAX_TURNS, u32);
+config_value!(GOOSE_AUTO_COMPACT_THRESHOLD, f64);
+config_value!(GOOSE_TOOL_PAIR_SUMMARIZATION, bool);
+config_value!(GOOSE_TOOL_CALL_CUTOFF, usize);
+config_value!(GOOSE_STREAM_TIMEOUT, u64);
+config_value!(GOOSE_DISABLE_KEYRING, String);
+config_value!(GOOSE_TELEMETRY_ENABLED, bool);
+config_value!(GOOSE_ALLOWLIST, String);
+config_value!(GOOSE_SYSTEM_PROMPT_FILE_PATH, String);
+config_value!(GOOSE_DEBUG, bool);
+config_value!(GOOSE_SHOW_FULL_OUTPUT, bool);
+config_value!(GOOSE_STATUS_HOOK, String);
+config_value!(GOOSE_LOCAL_ENABLE_THINKING, bool);
+config_value!(GOOSE_DATABRICKS_CLIENT_REQUEST_ID, bool);
+config_value!(CONTEXT_FILE_NAMES, Vec<String>);
+config_value!(EDIT_MODE, String);
+config_value!(RANDOM_THINKING_MESSAGES, bool);
+config_value!(CODE_MODE_TOOL_DISCLOSURE, String);
+
+// mTLS Settings
+config_value!(GOOSE_CLIENT_CERT_PATH, String);
+config_value!(GOOSE_CLIENT_KEY_PATH, String);
+config_value!(GOOSE_CA_CERT_PATH, String);
+
+// Planner & Subagent Settings
+config_value!(GOOSE_PLANNER_PROVIDER, String);
+config_value!(GOOSE_PLANNER_MODEL, String);
+config_value!(GOOSE_SUBAGENT_PROVIDER, String);
+config_value!(GOOSE_SUBAGENT_MODEL, String);
+config_value!(GOOSE_SUBAGENT_MAX_TURNS, usize);
+config_value!(GOOSE_MAX_BACKGROUND_TASKS, usize);
+
+// Recipe Settings
+config_value!(GOOSE_RECIPE_GITHUB_REPO, Option<String>);
+config_value!(GOOSE_RECIPE_RETRY_TIMEOUT_SECONDS, u64);
+config_value!(GOOSE_RECIPE_ON_FAILURE_TIMEOUT_SECONDS, u64);
+
+// CLI Settings
+config_value!(GOOSE_CLI_MIN_PRIORITY, f32);
+config_value!(GOOSE_CLI_THEME, String);
+config_value!(GOOSE_CLI_LIGHT_THEME, String);
+config_value!(GOOSE_CLI_DARK_THEME, String);
+config_value!(GOOSE_CLI_SHOW_COST, bool);
+config_value!(GOOSE_CLI_SHOW_THINKING, bool);
+config_value!(GOOSE_CLI_NEWLINE_KEY, String);
+
+// Security Settings
+config_value!(SECURITY_PROMPT_ENABLED, bool);
+config_value!(SECURITY_PROMPT_THRESHOLD, f64);
+config_value!(SECURITY_PROMPT_CLASSIFIER_ENABLED, bool);
+config_value!(SECURITY_PROMPT_CLASSIFIER_MODEL, String);
+config_value!(SECURITY_PROMPT_CLASSIFIER_ENDPOINT, String);
+config_value!(SECURITY_COMMAND_CLASSIFIER_ENABLED, bool);
+
+// Provider Settings
+config_value!(OPENAI_HOST, String);
+config_value!(OPENAI_BASE_PATH, String);
+config_value!(OPENAI_ORGANIZATION, String);
+config_value!(OPENAI_PROJECT, String);
+config_value!(OPENAI_TIMEOUT, u64);
+config_value!(ANTHROPIC_HOST, String);
+config_value!(OLLAMA_HOST, String);
+config_value!(OLLAMA_TIMEOUT, u64);
+config_value!(OLLAMA_STREAM_TIMEOUT, u64);
+config_value!(OLLAMA_STREAM_USAGE, bool);
+config_value!(DATABRICKS_HOST, String);
+config_value!(DATABRICKS_MAX_RETRIES, String);
+config_value!(DATABRICKS_INITIAL_RETRY_INTERVAL_MS, String);
+config_value!(DATABRICKS_BACKOFF_MULTIPLIER, String);
+config_value!(DATABRICKS_MAX_RETRY_INTERVAL_MS, String);
+config_value!(AZURE_OPENAI_ENDPOINT, String);
+config_value!(AZURE_OPENAI_DEPLOYMENT_NAME, String);
+config_value!(AZURE_OPENAI_API_VERSION, String);
+config_value!(GOOGLE_HOST, String);
+config_value!(GCP_PROJECT_ID, String);
+config_value!(GCP_LOCATION, String);
+config_value!(GCP_MAX_RETRIES, String);
+config_value!(GCP_INITIAL_RETRY_INTERVAL_MS, String);
+config_value!(GCP_BACKOFF_MULTIPLIER, String);
+config_value!(GCP_MAX_RETRY_INTERVAL_MS, String);
+config_value!(AWS_REGION, String);
+config_value!(AWS_PROFILE, String);
+config_value!(BEDROCK_MAX_RETRIES, usize);
+config_value!(BEDROCK_INITIAL_RETRY_INTERVAL_MS, u64);
+config_value!(BEDROCK_BACKOFF_MULTIPLIER, f64);
+config_value!(BEDROCK_MAX_RETRY_INTERVAL_MS, u64);
+config_value!(BEDROCK_ENABLE_CACHING, bool);
+config_value!(SAGEMAKER_ENDPOINT_NAME, String);
+config_value!(LITELLM_HOST, String);
+config_value!(LITELLM_BASE_PATH, String);
+config_value!(LITELLM_TIMEOUT, u64);
+config_value!(SNOWFLAKE_HOST, String);
+config_value!(GITHUB_COPILOT_HOST, String);
+config_value!(GITHUB_COPILOT_CLIENT_ID, String);
+config_value!(GITHUB_COPILOT_TOKEN_URL, String);
+config_value!(XAI_HOST, String);
+config_value!(OPENROUTER_HOST, String);
+config_value!(VENICE_HOST, String);
+config_value!(VENICE_BASE_PATH, String);
+config_value!(VENICE_MODELS_PATH, String);
+config_value!(TETRATE_HOST, String);
+config_value!(AVIAN_HOST, String);
+
+// Observability Settings
+config_value!(otel_exporter_otlp_endpoint, String);
+config_value!(otel_exporter_otlp_timeout, u64);
+
+// Tunnel Settings
+config_value!(tunnel_auto_start, bool);
+
+// Thinking Settings
+config_value!(GEMINI25_THINKING_BUDGET, i32);
 
 fn find_workspace_or_exe_root() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;

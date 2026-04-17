@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -9,7 +10,7 @@ use crate::recipe::Recipe;
 
 const SLASH_COMMANDS_CONFIG_KEY: &str = "slash_commands";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SlashCommandMapping {
     pub command: String,
     pub recipe_path: String,

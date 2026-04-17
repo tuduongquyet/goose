@@ -6,6 +6,7 @@ pub mod goose_mode;
 mod migrations;
 pub mod paths;
 pub mod permission;
+pub mod schema;
 pub mod search_path;
 pub mod signup_nanogpt;
 pub mod signup_openrouter;

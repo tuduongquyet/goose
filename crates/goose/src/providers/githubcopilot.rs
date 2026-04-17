@@ -182,7 +182,7 @@ impl GithubCopilotProvider {
         let config = Config::global();
         let host = normalize_host(
             &config
-                .get_param::<String>("GITHUB_COPILOT_HOST")
+                .get_github_copilot_host()
                 .unwrap_or_else(|_| DEFAULT_GITHUB_HOST.to_string()),
         );
         DiskCache::new(&host).clear().await
@@ -215,13 +215,13 @@ impl GithubCopilotProvider {
         let config = Config::global();
         let host = normalize_host(
             &config
-                .get_param::<String>("GITHUB_COPILOT_HOST")
+                .get_github_copilot_host()
                 .unwrap_or_else(|_| DEFAULT_GITHUB_HOST.to_string()),
         );
         let client_id: String = config
-            .get_param("GITHUB_COPILOT_CLIENT_ID")
+            .get_github_copilot_client_id()
             .unwrap_or_else(|_| DEFAULT_GITHUB_COPILOT_CLIENT_ID.to_string());
-        let copilot_token_url: Option<String> = config.get_param("GITHUB_COPILOT_TOKEN_URL").ok();
+        let copilot_token_url: Option<String> = config.get_github_copilot_token_url().ok();
         let urls = GithubCopilotUrls::new(&host, copilot_token_url.as_deref());
         let client = Client::builder()
             .timeout(Duration::from_secs(600))

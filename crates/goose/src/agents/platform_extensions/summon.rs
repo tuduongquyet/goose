@@ -301,7 +301,7 @@ fn current_epoch_millis() -> u64 {
 /// Get maximum number of concurrent background tasks
 fn max_background_tasks() -> usize {
     Config::global()
-        .get_param::<usize>("GOOSE_MAX_BACKGROUND_TASKS")
+        .get_goose_max_background_tasks()
         .unwrap_or(5)
 }
 
@@ -1284,11 +1284,7 @@ impl SummonClient {
                     .as_ref()
                     .and_then(|s| s.goose_provider.clone())
             })
-            .or_else(|| {
-                Config::global()
-                    .get_param::<String>("GOOSE_SUBAGENT_PROVIDER")
-                    .ok()
-            })
+            .or_else(|| Config::global().get_goose_subagent_provider().ok())
             .or_else(|| session.provider_name.clone())
             .ok_or_else(|| anyhow::anyhow!("No provider configured"))?;
 
@@ -1305,7 +1301,7 @@ impl SummonClient {
             .and_then(|s| s.goose_model.as_ref())
         {
             model_config.model_name = model.clone();
-        } else if let Ok(model) = Config::global().get_param::<String>("GOOSE_SUBAGENT_MODEL") {
+        } else if let Ok(model) = Config::global().get_goose_subagent_model() {
             model_config.model_name = model;
         }
 
@@ -1329,11 +1325,7 @@ impl SummonClient {
                     .ok()
                     .and_then(|v| v.parse().ok())
             })
-            .or_else(|| {
-                Config::global()
-                    .get_param::<usize>("GOOSE_SUBAGENT_MAX_TURNS")
-                    .ok()
-            })
+            .or_else(|| Config::global().get_goose_subagent_max_turns().ok())
             .unwrap_or(DEFAULT_SUBAGENT_MAX_TURNS)
     }
 

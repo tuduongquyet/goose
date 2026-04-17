@@ -37,10 +37,10 @@ impl Theme {
     fn as_str(&self) -> String {
         match self {
             Theme::Light => Config::global()
-                .get_param::<String>("GOOSE_CLI_LIGHT_THEME")
+                .get_goose_cli_light_theme()
                 .unwrap_or(DEFAULT_CLI_LIGHT_THEME.to_string()),
             Theme::Dark => Config::global()
-                .get_param::<String>("GOOSE_CLI_DARK_THEME")
+                .get_goose_cli_dark_theme()
                 .unwrap_or(DEFAULT_CLI_DARK_THEME.to_string()),
             Theme::Ansi => "base16".to_string(),
         }
@@ -70,20 +70,20 @@ thread_local! {
         std::env::var("GOOSE_CLI_THEME").ok()
             .map(|val| Theme::from_config_str(&val))
             .unwrap_or_else(||
-                Config::global().get_param::<String>("GOOSE_CLI_THEME").ok()
+                Config::global().get_goose_cli_theme().ok()
                     .map(|val| Theme::from_config_str(&val))
                     .unwrap_or(Theme::Ansi)
             )
     );
     static SHOW_FULL_TOOL_OUTPUT: RefCell<bool> = RefCell::new(
-        Config::global().get_param::<bool>("GOOSE_SHOW_FULL_OUTPUT").unwrap_or(false)
+        Config::global().get_goose_show_full_output().unwrap_or(false)
     );
 }
 
 pub fn set_theme(theme: Theme) {
     let config = Config::global();
     config
-        .set_param("GOOSE_CLI_THEME", theme.as_config_string())
+        .set_goose_cli_theme(theme.as_config_string())
         .expect("Failed to set theme");
     CURRENT_THEME.with(|t| *t.borrow_mut() = theme);
 
@@ -94,7 +94,7 @@ pub fn set_theme(theme: Theme) {
         Theme::Ansi => "ansi",
     };
 
-    if let Err(e) = config.set_param("GOOSE_CLI_THEME", theme_str) {
+    if let Err(e) = config.set_goose_cli_theme(theme_str) {
         eprintln!("Failed to save theme setting to config: {}", e);
     }
 }
@@ -126,7 +126,7 @@ impl ThinkingIndicator {
         let spinner = cliclack::spinner();
         let hint = style("(Ctrl+C to interrupt)").dim();
         if Config::global()
-            .get_param("RANDOM_THINKING_MESSAGES")
+            .get_random_thinking_messages()
             .unwrap_or(true)
         {
             spinner.start(format!(
@@ -177,7 +177,7 @@ pub fn hide_thinking() {
 }
 
 pub fn run_status_hook(status: &str) {
-    if let Ok(hook) = Config::global().get_param::<String>("GOOSE_STATUS_HOOK") {
+    if let Ok(hook) = Config::global().get_goose_status_hook() {
         let status = status.to_string();
         std::thread::spawn(move || {
             #[cfg(target_os = "windows")]
@@ -449,7 +449,7 @@ pub fn goose_mode_message(text: &str) {
 
 fn should_show_thinking() -> bool {
     Config::global()
-        .get_param::<bool>("GOOSE_CLI_SHOW_THINKING")
+        .get_goose_cli_show_thinking()
         .unwrap_or(false)
         && std::io::stdout().is_terminal()
 }
@@ -507,7 +507,7 @@ fn render_tool_response(resp: &ToolResponse, debug: bool) {
                 }
 
                 let min_priority = config
-                    .get_param::<f32>("GOOSE_CLI_MIN_PRIORITY")
+                    .get_goose_cli_min_priority()
                     .ok()
                     .unwrap_or(DEFAULT_MIN_PRIORITY);
 
