@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
 import { FilesList } from "./FilesList";
 import { useGitState } from "@/shared/hooks/useGitState";
 import { useChangedFiles } from "@/shared/hooks/useChangedFiles";
@@ -20,7 +19,7 @@ import type { WorkingContext } from "../stores/chatSessionStore";
 import { WorkspaceWidget } from "./widgets/WorkspaceWidget";
 import { ChangesWidget } from "./widgets/ChangesWidget";
 import { ArtifactsWidget } from "./widgets/ArtifactsWidget";
-import { McpServersWidget } from "./widgets/McpServersWidget";
+import { ExtensionsWidget } from "./widgets/ExtensionsWidget";
 import { openPath } from "@tauri-apps/plugin-opener";
 
 interface ContextPanelProps {
@@ -161,17 +160,6 @@ export function ContextPanel({
     void refetchAll();
   }, [refetchAll]);
 
-  useEffect(() => {
-    const unlisten = listen<{ sessionId: string }>("acp:done", (event) => {
-      if (event.payload.sessionId === sessionId) {
-        void refetchFiles();
-      }
-    });
-    return () => {
-      void unlisten.then((fn) => fn());
-    };
-  }, [sessionId, refetchFiles]);
-
   return (
     <Tabs
       value={activeTab}
@@ -218,7 +206,7 @@ export function ContextPanel({
             onOpenFile={handleOpenChangedFile}
           />
           <ArtifactsWidget />
-          <McpServersWidget />
+          <ExtensionsWidget />
         </div>
       </TabsContent>
 

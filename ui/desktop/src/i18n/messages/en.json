@@ -932,9 +932,6 @@
   "envVarsSection.variableName": {
     "defaultMessage": "Variable name"
   },
-  "environmentBadge.alpha": {
-    "defaultMessage": "Alpha"
-  },
   "environmentBadge.dev": {
     "defaultMessage": "Dev"
   },
@@ -1135,6 +1132,15 @@
   },
   "extensionsView.searchPlaceholder": {
     "defaultMessage": "Search extensions..."
+  },
+  "externalBackendSection.certFingerprint": {
+    "defaultMessage": "Certificate Fingerprint (optional)"
+  },
+  "externalBackendSection.certFingerprintHelp": {
+    "defaultMessage": "Pin a specific TLS certificate fingerprint. If omitted, the certificate is trusted on first use (TOFU)."
+  },
+  "externalBackendSection.certFingerprintPlaceholder": {
+    "defaultMessage": "AA:BB:CC:... or sha256/base64"
   },
   "externalBackendSection.description": {
     "defaultMessage": "By default goose launches a server for you, use this to connect to an external goose server"
@@ -2308,6 +2314,9 @@
   },
   "modelsBottomBar.currentModel": {
     "defaultMessage": "Current model"
+  },
+  "modelsBottomBar.loadingModel": {
+    "defaultMessage": "Loading model..."
   },
   "modelsBottomBar.localModelSettings": {
     "defaultMessage": "Local Model Settings"

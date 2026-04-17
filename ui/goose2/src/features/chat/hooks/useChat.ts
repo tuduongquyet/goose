@@ -227,8 +227,6 @@ export function useChat(
           }
         }
 
-        // Send via ACP — response streams back through Tauri events
-        // which are handled by the global useAcpStream listener in AppShell.
         store.setChatState(sessionId, "streaming");
         // When images are present with no text, pass a single space so the ACP
         // driver doesn't send an empty text content block that goose rejects.
@@ -236,15 +234,17 @@ export function useChat(
           buildAttachmentPromptPreamble(attachments);
         const promptBody = text.trim() || (images?.length ? " " : text);
         const acpPrompt = `${attachmentPromptPreamble}${promptBody}`;
-        await acpSendMessage(sessionId, providerId, acpPrompt, {
+        await acpSendMessage(sessionId, acpPrompt, {
           systemPrompt,
-          workingDir: workingDirOverride,
           personaId: effectivePersonaInfo?.id,
           personaName: effectivePersonaInfo?.name,
           images: images?.map(
             (img) => [img.base64, img.mimeType] as [string, string],
           ),
         });
+
+        store.setChatState(sessionId, "idle");
+        store.setStreamingMessageId(sessionId, null);
 
         if (wasDraft) {
           const promoted = sessionStore.getSession(sessionId);
