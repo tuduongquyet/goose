@@ -8,7 +8,7 @@
     "env": [
       "302AI_API_KEY"
     ],
-    "model_count": 64
+    "model_count": 95
   },
   {
     "id": "alibaba",
@@ -121,6 +121,17 @@
     "model_count": 7
   },
   {
+    "id": "tencent-token-plan",
+    "display_name": "Tencent Token Plan",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.lkeap.cloud.tencent.com/plan/v3",
+    "doc": "https://cloud.tencent.com/document/product/1823/130060",
+    "env": [
+      "TENCENT_TOKEN_PLAN_API_KEY"
+    ],
+    "model_count": 1
+  },
+  {
     "id": "fireworks-ai",
     "display_name": "Fireworks AI",
     "npm": "@ai-sdk/openai-compatible",
@@ -184,7 +195,7 @@
     "env": [
       "DASHSCOPE_API_KEY"
     ],
-    "model_count": 75
+    "model_count": 76
   },
   {
     "id": "minimax-cn-coding-plan",
@@ -250,7 +261,7 @@
     "env": [
       "ZENMUX_API_KEY"
     ],
-    "model_count": 87
+    "model_count": 88
   },
   {
     "id": "upstage",
@@ -371,7 +382,7 @@
     "env": [
       "GITHUB_TOKEN"
     ],
-    "model_count": 25
+    "model_count": 26
   },
   {
     "id": "mixlayer",
@@ -415,7 +426,7 @@
     "env": [
       "OPENCODE_API_KEY"
     ],
-    "model_count": 51
+    "model_count": 52
   },
   {
     "id": "stepfun",
@@ -448,7 +459,7 @@
     "env": [
       "POE_API_KEY"
     ],
-    "model_count": 128
+    "model_count": 129
   },
   {
     "id": "helicone",
@@ -459,7 +470,7 @@
     "env": [
       "HELICONE_API_KEY"
     ],
-    "model_count": 91
+    "model_count": 90
   },
   {
     "id": "ollama-cloud",
@@ -536,7 +547,7 @@
     "env": [
       "FIRMWARE_API_KEY"
     ],
-    "model_count": 25
+    "model_count": 24
   },
   {
     "id": "lmstudio",
@@ -570,6 +581,17 @@
       "MOONSHOT_API_KEY"
     ],
     "model_count": 6
+  },
+  {
+    "id": "wafer.ai",
+    "display_name": "Wafer",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://pass.wafer.ai/v1",
+    "doc": "https://docs.wafer.ai/wafer-pass",
+    "env": [
+      "WAFER_API_KEY"
+    ],
+    "model_count": 2
   },
   {
     "id": "cloudferro-sherlock",
@@ -635,7 +657,7 @@
     "env": [
       "NVIDIA_API_KEY"
     ],
-    "model_count": 76
+    "model_count": 77
   },
   {
     "id": "inference",
@@ -671,6 +693,17 @@
     "model_count": 38
   },
   {
+    "id": "digitalocean",
+    "display_name": "DigitalOcean",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://inference.do-ai.run/v1",
+    "doc": "https://docs.digitalocean.com/products/gradient-ai-platform/details/models/",
+    "env": [
+      "DIGITALOCEAN_ACCESS_TOKEN"
+    ],
+    "model_count": 46
+  },
+  {
     "id": "vultr",
     "display_name": "Vultr",
     "npm": "@ai-sdk/openai-compatible",
@@ -701,7 +734,7 @@
     "env": [
       "OVHCLOUD_API_KEY"
     ],
-    "model_count": 13
+    "model_count": 10
   },
   {
     "id": "friendli",
@@ -723,7 +756,7 @@
     "env": [
       "CORTECS_API_KEY"
     ],
-    "model_count": 30
+    "model_count": 33
   },
   {
     "id": "siliconflow",
@@ -756,7 +789,7 @@
     "env": [
       "LLMGATEWAY_API_KEY"
     ],
-    "model_count": 203
+    "model_count": 182
   },
   {
     "id": "cloudflare-workers-ai",
@@ -846,7 +879,7 @@
     "env": [
       "BERGET_API_KEY"
     ],
-    "model_count": 8
+    "model_count": 5
   },
   {
     "id": "github-models",
@@ -871,6 +904,17 @@
     "model_count": 9
   },
   {
+    "id": "tencent-tokenhub",
+    "display_name": "Tencent TokenHub",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://tokenhub.tencentmaas.com/v1",
+    "doc": "https://cloud.tencent.com/document/product/1823/130050",
+    "env": [
+      "TENCENT_TOKENHUB_API_KEY"
+    ],
+    "model_count": 1
+  },
+  {
     "id": "modelscope",
     "display_name": "ModelScope",
     "npm": "@ai-sdk/openai-compatible",
@@ -880,6 +924,17 @@
       "MODELSCOPE_API_KEY"
     ],
     "model_count": 7
+  },
+  {
+    "id": "hpc-ai",
+    "display_name": "HPC-AI",
+    "npm": "@ai-sdk/openai-compatible",
+    "api": "https://api.hpc-ai.com/inference/v1",
+    "doc": "https://www.hpc-ai.com/doc/docs/quickstart/",
+    "env": [
+      "HPC_AI_API_KEY"
+    ],
+    "model_count": 3
   },
   {
     "id": "xiaomi",
