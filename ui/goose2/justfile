@@ -183,10 +183,5 @@ clean:
     rm -rf dist
     rm -rf node_modules
 
-# Cherry-pick commits from the goose2 repo into ui/goose2/
-cherry-pick-goose2 *ARGS:
-    git fetch goose2
-    git format-patch -1 {{ARGS}} --stdout | git am --directory=ui/goose2
-
 build-core:
     cargo build -p goose-cli --bin goose
