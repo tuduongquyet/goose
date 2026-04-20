@@ -170,58 +170,15 @@ pub fn spawn_background_review(
 
 /// Query recent past sessions for recurring patterns to feed into the review.
 ///
-/// Extracts key user messages from recent sessions to help the review agent
-/// notice cross-session patterns (e.g. "user always does X", "this tool quirk
-/// keeps coming up").
+/// Loads full conversations from recent sessions, formats them into readable
+/// transcripts, and truncates intelligently — keeping the most recent messages
+/// within a per-session budget. Much higher fidelity than the old approach of
+/// dumping 200-char snippets from search results.
 async fn build_session_context(
     session_manager: &crate::session::SessionManager,
     exclude_session_id: &str,
 ) -> String {
-    use crate::session::session_manager::SessionType;
-
-    // Search recent sessions for user messages (broad query)
-    let results = session_manager
-        .search_chat_history(
-            "*", // broad search
-            Some(5),
-            None,
-            None,
-            Some(exclude_session_id.to_string()),
-            vec![SessionType::User],
-        )
-        .await;
-
-    let Ok(results) = results else {
-        return String::new();
-    };
-
-    if results.results.is_empty() {
-        return String::new();
-    }
-
-    let mut context = String::new();
-    for session in results.results.iter().take(3) {
-        if session.messages.is_empty() {
-            continue;
-        }
-        context.push_str(&format!(
-            "\n[Session: {} ({})]\n",
-            session.session_description, session.last_activity
-        ));
-        for msg in session.messages.iter().take(5) {
-            let preview: String = msg.content.chars().take(200).collect();
-            context.push_str(&format!("  {}: {}\n", msg.role, preview));
-        }
-    }
-
-    // Cap at 2000 chars to avoid bloating the review prompt
-    let truncated: String = context.chars().take(2000).collect();
-    if truncated.len() < context.len() {
-        context = truncated;
-        context.push_str("\n[...truncated]");
-    }
-
-    context
+    crate::session::session_summary::build_review_context(session_manager, exclude_session_id).await
 }
 
 /// Run the pre-compression flush synchronously before compaction.

@@ -90,60 +90,11 @@ fn read_entries(filename: &str) -> Vec<String> {
     if raw.trim().is_empty() {
         return Vec::new();
     }
+    let mut seen = std::collections::HashSet::new();
     raw.split(ENTRY_DELIMITER)
         .map(|e| e.trim().to_string())
-        .filter(|e| !e.is_empty())
+        .filter(|e| !e.is_empty() && seen.insert(e.clone()))
         .collect()
-}
-
-#[allow(dead_code)]
-fn write_entries(filename: &str, entries: &[String]) -> std::io::Result<()> {
-    let dir = memory_dir();
-    fs::create_dir_all(&dir)?;
-    let path = dir.join(filename);
-    let content = if entries.is_empty() {
-        String::new()
-    } else {
-        entries.join(ENTRY_DELIMITER)
-    };
-    // Acquire exclusive lock via .lock sidecar file
-    let lock_path = dir.join(format!(".{}.lock", filename));
-    let lock_file = fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(&lock_path)?;
-    lock_file.lock_exclusive()?;
-    // Atomic write via tempfile under lock
-    let result = (|| {
-        let mut tmp = tempfile::NamedTempFile::new_in(&dir)?;
-        tmp.write_all(content.as_bytes())?;
-        tmp.flush()?;
-        tmp.persist(&path).map_err(|e| e.error)?;
-        Ok(())
-    })();
-    lock_file.unlock()?;
-    result
-}
-
-/// Read entries with shared lock to avoid reading mid-write.
-#[allow(dead_code)]
-fn read_entries_locked(filename: &str) -> Vec<String> {
-    let dir = memory_dir();
-    let lock_path = dir.join(format!(".{}.lock", filename));
-    if let Ok(lock_file) = fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(&lock_path)
-    {
-        let _ = lock_file.lock_shared();
-        let result = read_entries(filename);
-        let _ = lock_file.unlock();
-        result
-    } else {
-        read_entries(filename)
-    }
 }
 
 /// Execute a read-modify-write operation under a single exclusive lock.

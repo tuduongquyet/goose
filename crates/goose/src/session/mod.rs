@@ -1,8 +1,9 @@
-mod chat_history_search;
+pub(crate) mod chat_history_search;
 mod diagnostics;
 pub mod extension_data;
 mod legacy;
 pub mod session_manager;
+pub mod session_summary;
 pub mod thread_manager;
 
 pub use diagnostics::{
