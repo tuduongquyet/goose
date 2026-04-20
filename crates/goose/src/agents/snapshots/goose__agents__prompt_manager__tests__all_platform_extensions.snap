@@ -76,13 +76,18 @@ Use this extension to create, manage, and iterate on custom HTML/CSS/JavaScript 
 ## chatrecall
 
 ### Instructions
-Chat Recall
-
-Search past conversations and load session summaries when the user expects some memory or context.
+Chat Recall — search your long-term memory of past conversations, or load session details.
 
 Two modes:
-- Search mode: Use query with keywords/synonyms to find relevant messages
-- Load mode: Use session_id to get first and last messages of a specific session
+1. Search mode (query): Keywords/synonyms to find relevant sessions. Returns LLM-generated
+   summaries of matching sessions by default — clean, focused recaps instead of raw transcripts.
+   Set summarize=false to get raw messages instead.
+2. Load mode (session_id): Get first and last messages of a specific session.
+
+Use this proactively when:
+- The user says "we did this before", "remember when", "last time"
+- The user asks about a topic you worked on before but don't have in current context
+- You want to check if you've solved a similar problem before
 
 ## code_execution
 
@@ -122,7 +127,9 @@ Manage agent sessions: list, view, start, send messages, and interrupt agents.
 
 
 You have these skills at your disposal, when it is clear they can help you solve a problem or you are asked to use them:
+• agent-tools - Use when interacting with Block services — Slack, Google Drive, Google Calendar, Gmail, Snowflake, Jira, GitHub, Glean, Salesforce, Datadog, Linear, Airtable, PagerDuty, Sentry, Notion, Workday, Asana, and more. Always load this skill before accessing any Block service.
 • goose-doc-guide - Reference goose documentation to create, configure, or explain goose-specific features like recipes, extensions, sessions, and providers. You MUST fetch relevant goose docs before answering. You MUST NOT rely on training data or assumptions for any goose-specific fields, values, names, syntax, or commands.
+• perception-wiki - it is critical to use when you need context about the user, their projects, their people, or their open tasks. Reduces ambiguity, provides common sense. This is a personal wiki providing knowledge about who they work with, project and priorities.
 ## summarize
 
 
