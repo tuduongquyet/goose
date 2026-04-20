@@ -69,8 +69,9 @@ pub fn format_conversation(conversation: &Conversation) -> String {
                     };
                     parts.push(format!("[TOOL]: {}", text));
                 }
-                MessageContent::Thinking(t) => {
-                    parts.push(format!("[THINKING]: {}", t.thinking));
+                MessageContent::Thinking(_) | MessageContent::RedactedThinking(_) => {
+                    // Thinking traces are internal chain-of-thought, never user-visible.
+                    // Exclude from summarization input.
                 }
                 _ => {}
             }
@@ -174,10 +175,14 @@ async fn summarize_single_session(
 
     let messages = vec![Message::user().with_text(user_prompt)];
 
+    // Use a throwaway session ID so providers that track context by session
+    // (Claude Code, Gemini CLI) don't pollute the historical session.
+    let ephemeral_id = format!("summary_{}", session_id);
+
     match provider
         .complete(
             model_config,
-            session_id,
+            &ephemeral_id,
             SUMMARIZE_SYSTEM_PROMPT,
             &messages,
             &[],
