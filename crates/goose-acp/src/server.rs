@@ -1703,6 +1703,12 @@ impl GooseAcpAgent {
 
         // Handle edit/retry: atomically truncate + append in one transaction,
         // or just append for normal prompts.
+        tracing::warn!(
+            has_meta = args.meta.is_some(),
+            meta_keys = ?args.meta.as_ref().map(|m| m.keys().collect::<Vec<_>>()),
+            user_msg_id = ?user_message.id,
+            "EDIT/RETRY: on_prompt received"
+        );
         let truncate_id = args
             .meta
             .as_ref()
@@ -1711,6 +1717,13 @@ impl GooseAcpAgent {
             .map(String::from);
 
         if let Some(ref truncate_id) = truncate_id {
+            tracing::warn!(
+                thread_id = %thread_id,
+                session_id = %internal_session_id,
+                truncate_id = %truncate_id,
+                user_msg_id = ?user_message.id,
+                "EDIT/RETRY: attempting truncation"
+            );
             let (_, rows_deleted) = self
                 .thread_manager
                 .truncate_and_append(
@@ -1725,11 +1738,11 @@ impl GooseAcpAgent {
                         .data(format!("Failed to truncate and append: {}", e))
                 })?;
 
-            tracing::debug!(
+            tracing::warn!(
                 thread_id = %thread_id,
                 truncate_id = %truncate_id,
                 rows_deleted = rows_deleted,
-                "Truncated conversation for edit/retry"
+                "EDIT/RETRY: truncation complete"
             );
         } else {
             self.thread_manager
