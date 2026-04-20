@@ -61,6 +61,7 @@ function shouldSetupUpdater(): boolean {
 
 // Settings management
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+const STARTUP_LOGS_DIR = path.join(app.getPath('userData'), 'logs', 'startup');
 
 function getSettings(): Settings {
   if (fsSync.existsSync(SETTINGS_FILE)) {
@@ -617,6 +618,7 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     isPackaged: app.isPackaged,
     resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
     logger: log,
+    diagnosticsDir: STARTUP_LOGS_DIR,
   });
 
   // For locally-spawned goosed, pin using the fingerprint from stdout.
@@ -637,6 +639,9 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     process: goosedProcess,
     errorLog,
     stopErrorLogCollection,
+    startupDiagnosticsPath,
+    getStartupDiagnostics,
+    recordStartupEvent,
   } = goosedResult;
 
   const mainWindowState = windowStateKeeper({
@@ -705,9 +710,27 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   );
   goosedClients.set(mainWindow.id, goosedClient);
 
-  const serverReady = await checkServerStatus(goosedClient, errorLog);
+  const serverReady = await checkServerStatus(goosedClient, errorLog, {
+    onEvent: recordStartupEvent,
+  });
   if (!serverReady) {
     const isUsingExternalBackend = settings.externalGoosed?.enabled;
+    const diagnostics = getStartupDiagnostics();
+    const stderrTail = diagnostics?.stderrTail ?? [];
+    const failureDetailParts = [
+      errorLog.join('\n'),
+      diagnostics?.childExitCode !== null || diagnostics?.childExitSignal
+        ? `Child exit: code=${diagnostics?.childExitCode ?? 'null'} signal=${diagnostics?.childExitSignal ?? 'null'}`
+        : 'Child exit: unavailable',
+      diagnostics?.certFingerprintSeen
+        ? 'TLS fingerprint observed: yes'
+        : 'TLS fingerprint observed: no',
+      diagnostics?.healthCheckSucceeded
+        ? 'Health check observed: yes'
+        : 'Health check observed: no',
+      startupDiagnosticsPath ? `Startup diagnostics: ${startupDiagnosticsPath}` : '',
+      stderrTail.length > 0 ? `Captured startup stderr:\n${stderrTail.join('\n')}` : '',
+    ].filter(Boolean);
 
     if (isUsingExternalBackend) {
       const response = dialog.showMessageBoxSync({
@@ -730,16 +753,22 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
         return createChat(app, { initialMessage, dir });
       }
     } else {
+      recordStartupEvent('startup_failure_dialog_shown', {
+        childStillRunning: Boolean(
+          goosedProcess && goosedProcess.exitCode === null && !goosedProcess.killed
+        ),
+      });
       dialog.showMessageBoxSync({
         type: 'error',
         title: 'Goose Failed to Start',
         message: 'The backend server failed to start.',
-        detail: errorLog.join('\n'),
+        detail: failureDetailParts.join('\n\n'),
         buttons: ['OK'],
       });
     }
     app.quit();
   }
+  recordStartupEvent('startup_ready');
 
   // errorLog is only needed during startup to detect fatal errors.
   // Stop collecting stderr to avoid unbounded memory growth over long sessions.
@@ -749,11 +778,14 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
   // Nudge the user if mesh is their provider but isn't running.
   // Delay to let the renderer mount before sending the IPC event.
   setTimeout(() => {
-    mesh.checkProviderRunning(goosedClient).then((ok) => {
-      if (!ok && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('mesh-not-running');
-      }
-    }).catch(() => {});
+    mesh
+      .checkProviderRunning(goosedClient)
+      .then((ok) => {
+        if (!ok && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('mesh-not-running');
+        }
+      })
+      .catch(() => {});
   }, 5000);
 
   // Let windowStateKeeper manage the window
