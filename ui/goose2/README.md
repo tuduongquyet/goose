@@ -15,7 +15,6 @@ Goose2 is a Tauri 2 + React 19 desktop app.
 
 `just setup` installs UI workspace dependencies, builds the SDK package, and builds the local debug `goose` CLI binary. `just dev` exports `GOOSE_BIN` to that local binary and loads `src-tauri/tauri.dev.conf.json`, which clears the production `externalBin` requirement during development.
 
-
 Run `just` to list available commands, or see [justfile](./justfile) for the full recipe definitions.
 
 ## Important Files
