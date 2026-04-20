@@ -67,10 +67,14 @@ export async function acpSendMessage(
     ? { truncate_before_message_id: truncateBeforeMessageId }
     : undefined;
 
-  const messageId = options.messageId ?? crypto.randomUUID();
-  setActiveMessageId(gooseSessionId, messageId);
+  // Two separate IDs: one for the backend (user message) and one for the
+  // notification handler (upcoming assistant response). Using the same ID
+  // causes the handler to append assistant chunks into the user message.
+  const userMessageId = options.messageId ?? crypto.randomUUID();
+  const assistantMessageId = crypto.randomUUID();
+  setActiveMessageId(gooseSessionId, assistantMessageId);
 
-  await directAcp.prompt(gooseSessionId, content, messageId, meta);
+  await directAcp.prompt(gooseSessionId, content, userMessageId, meta);
 
   clearActiveMessageId(gooseSessionId);
 }
