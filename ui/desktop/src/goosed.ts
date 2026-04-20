@@ -185,7 +185,7 @@ export interface StartupDiagnostics {
   certFingerprintSeen: boolean;
   healthCheckSucceeded: boolean;
   childExitCode: number | null;
-  childExitSignal: NodeJS.Signals | null;
+  childExitSignal: string | null;
   stderrTail: string[];
   stdoutTail: string[];
   events: StartupTraceEvent[];
@@ -242,7 +242,7 @@ const createStartupDiagnostics = (
 
   fs.mkdirSync(diagnosticsDir, { recursive: true });
   const startedAt = new Date();
-  const attemptId = `goosed-startup-${startedAt.toISOString().replaceAll(':', '-')}-${process.pid}.json`;
+  const attemptId = `goosed-startup-${startedAt.toISOString().replace(/:/g, '-')}-${process.pid}.json`;
   const diagnosticsPath = path.join(diagnosticsDir, attemptId);
   const monotonicStart = Date.now();
 
@@ -368,9 +368,11 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
   logger.info(`Starting goosed from: ${goosedPath} on port ${port} in dir ${workingDir}`);
 
   const baseUrl = `https://127.0.0.1:${port}`;
-  startupTrace?.diagnostics.goosedPath = goosedPath;
-  startupTrace?.diagnostics.baseUrl = baseUrl;
-  startupTrace?.record('spawn_start', { goosedPath, port, workingDir });
+  if (startupTrace) {
+    startupTrace.diagnostics.goosedPath = goosedPath;
+    startupTrace.diagnostics.baseUrl = baseUrl;
+    startupTrace.record('spawn_start', { goosedPath, port, workingDir });
+  }
 
   const spawnEnv: Record<string, string | undefined> = {
     ...process.env,
@@ -413,8 +415,10 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
   });
 
   const goosedProcess = spawn(spawnCommand, spawnArgs, spawnOptions);
-  startupTrace?.diagnostics.pid = goosedProcess.pid ?? null;
-  startupTrace?.record('spawn_success', { pid: goosedProcess.pid ?? null });
+  if (startupTrace) {
+    startupTrace.diagnostics.pid = goosedProcess.pid ?? null;
+    startupTrace.record('spawn_success', { pid: goosedProcess.pid ?? null });
+  }
 
   let certFingerprint: string | null = null;
   const fingerprintReady = new Promise<string | null>((resolve) => {
