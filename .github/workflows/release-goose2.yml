@@ -8,6 +8,11 @@ on:
         description: "Version string (e.g. 2.0.0-rc.1). Used when testing from a branch."
         required: true
         type: string
+      cli-run-id:
+        description: "Run ID of a build-cli workflow to pull goose binaries from (skips CLI build step)"
+        required: false
+        type: string
+        default: ""
 
 name: "Release Goose 2"
 
@@ -41,6 +46,7 @@ jobs:
           echo "Release version: $VERSION"
 
   build-cli:
+    if: inputs.cli-run-id == ''
     needs: [prepare-version]
     uses: ./.github/workflows/build-cli.yml
     with:
@@ -48,6 +54,7 @@ jobs:
 
   bundle-goose2:
     needs: [prepare-version, build-cli]
+    if: ${{ !cancelled() && needs.prepare-version.result == 'success' && (needs.build-cli.result == 'success' || needs.build-cli.result == 'skipped') }}
     uses: ./.github/workflows/bundle-goose2.yml
     permissions:
       id-token: write
@@ -58,12 +65,13 @@ jobs:
       signing: true
       windows-signing: true
       environment: signing
-      cli-run-id: ${{ github.run_id }}
+      cli-run-id: ${{ inputs.cli-run-id != '' && inputs.cli-run-id || github.run_id }}
     secrets: inherit
 
   install-script:
     name: Upload Install Script
     runs-on: ubuntu-latest
+    if: inputs.cli-run-id == ''
     needs: [build-cli]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -76,6 +84,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     needs: [prepare-version, build-cli, install-script, bundle-goose2]
+    if: ${{ !cancelled() && needs.bundle-goose2.result == 'success' }}
     permissions:
       contents: write
       id-token: write
@@ -83,6 +92,7 @@ jobs:
       attestations: write
     steps:
       - name: Download CLI artifacts
+        if: needs.build-cli.result == 'success'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: goose-*
@@ -90,6 +100,7 @@ jobs:
           path: release
 
       - name: Download install script
+        if: needs.install-script.result == 'success'
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: download_cli.sh
