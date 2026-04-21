@@ -1,6 +1,6 @@
-# Derive a stable port from the working directory so the same worktree
-# always gets the same port.
-vite_port := `python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)"`
+# Derive a stable default port from the working directory so the same worktree
+# usually gets the same port. Set VITE_PORT to override it.
+default_vite_port := `python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)"`
 
 # Default recipe
 default:
@@ -83,7 +83,8 @@ dev: setup
     #!/usr/bin/env bash
     set -euo pipefail
 
-    VITE_PORT={{ vite_port }}
+    DEFAULT_VITE_PORT={{ default_vite_port }}
+    VITE_PORT="${VITE_PORT:-$DEFAULT_VITE_PORT}"
     export VITE_PORT
     # Enable perf logs in the child `goose serve` process by default.
     # Override with e.g. RUST_LOG=info just dev to disable.
@@ -99,7 +100,7 @@ dev: setup
     else
         unset GOOSE_BIN
     fi
-    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"cd ${PROJECT_DIR} && exec pnpm exec vite --port ${VITE_PORT} --strictPort\",\"cwd\":\".\",\"wait\":false}}}")
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./scripts/start-dev-vite.sh ${VITE_PORT}\",\"cwd\":\"${PROJECT_DIR}\",\"wait\":false}}}")
 
     if [[ -n "${GOOSE_BIN:-}" ]]; then
         echo "Using local goose binary: ${GOOSE_BIN}"
@@ -132,11 +133,13 @@ dev-debug: setup
     #!/usr/bin/env bash
     set -euo pipefail
 
-    VITE_PORT={{ vite_port }}
+    DEFAULT_VITE_PORT={{ default_vite_port }}
+    VITE_PORT="${VITE_PORT:-$DEFAULT_VITE_PORT}"
     export VITE_PORT
     # Enable perf logs in the child `goose serve` process by default.
     # Override with e.g. RUST_LOG=info just dev-debug to disable.
     export RUST_LOG="${RUST_LOG:-perf=debug,info}"
+    PROJECT_DIR=$(pwd)
     REPO_ROOT=$(cd ../.. && pwd)
     LOCAL_GOOSE_DEBUG="${REPO_ROOT}/target/debug/goose"
     LOCAL_GOOSE_RELEASE="${REPO_ROOT}/target/release/goose"
@@ -147,7 +150,7 @@ dev-debug: setup
     else
         unset GOOSE_BIN
     fi
-    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./node_modules/.bin/vite --port ${VITE_PORT} --strictPort\",\"cwd\":\"..\",\"wait\":false}}}")
+    EXTRA_CONFIG_ARGS=(--config "{\"build\":{\"devUrl\":\"http://localhost:${VITE_PORT}\",\"beforeDevCommand\":{\"script\":\"exec ./scripts/start-dev-vite.sh ${VITE_PORT}\",\"cwd\":\"${PROJECT_DIR}\",\"wait\":false}}}")
 
     if [[ -n "${GOOSE_BIN:-}" ]]; then
         echo "Using local goose binary: ${GOOSE_BIN}"
@@ -184,7 +187,8 @@ kill:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    VITE_PORT={{ vite_port }}
+    DEFAULT_VITE_PORT={{ default_vite_port }}
+    VITE_PORT="${VITE_PORT:-$DEFAULT_VITE_PORT}"
     PID=$(lsof -ti :"$VITE_PORT" 2>/dev/null | head -1) || true
 
     if [[ -z "$PID" ]]; then
