@@ -2,6 +2,10 @@
 # always gets the same port.
 vite_port := `python3 -c "import hashlib,os; h=int(hashlib.sha256(os.getcwd().encode()).hexdigest(),16); print(10000 + h % 55000)"`
 
+# Paths that affect the goose binary — used to filter git diff/status.
+# NOTE: if you add a new crate dependency to goose-cli, add its path here.
+backend_paths := "crates/goose-cli crates/goose crates/goose-acp crates/goose-acp-macros crates/goose-mcp crates/goose-server Cargo.toml Cargo.lock vendor"
+
 # Default recipe
 default:
     @just --list
@@ -16,15 +20,13 @@ setup:
     cd sdk && pnpm build
     cargo build --manifest-path ../../Cargo.toml -p goose-cli --bin goose
     SHA=$(git rev-parse HEAD)
-    BACKEND_PATHS="crates/goose-cli crates/goose crates/goose-acp crates/goose-acp-macros crates/goose-mcp crates/goose-server Cargo.toml Cargo.lock vendor"
-    if [[ -n "$(git status --porcelain -- $BACKEND_PATHS 2>/dev/null)" ]]; then
+    if [[ -n "$(git status --porcelain -- {{ backend_paths }} 2>/dev/null)" ]]; then
         SHA="${SHA}-dirty"
     fi
     echo "${SHA}" > ../../target/debug/.goose-build-sha
 
 # Check if the goose binary matches the current git state.
 # Only flags staleness when paths that affect the binary have changed.
-# NOTE: if you add a new crate dependency to goose-cli, add its path here.
 check-binary bin_path="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -42,13 +44,10 @@ check-binary bin_path="":
         fi
     fi
 
-    # Paths that affect the goose binary — used to filter git diff/status.
-    BACKEND_PATHS="crates/goose-cli crates/goose crates/goose-acp crates/goose-acp-macros crates/goose-mcp crates/goose-server Cargo.toml Cargo.lock vendor"
-
     STAMP_FILE="${GOOSE_BIN%/*}/.goose-build-sha"
     CURRENT_SHA=$(git rev-parse HEAD)
     CURRENT_DIRTY=""
-    if [[ -n "$(git status --porcelain -- $BACKEND_PATHS 2>/dev/null)" ]]; then
+    if [[ -n "$(git status --porcelain -- {{ backend_paths }} 2>/dev/null)" ]]; then
         CURRENT_DIRTY="-dirty"
     fi
 
@@ -65,7 +64,7 @@ check-binary bin_path="":
 
     if [[ "${BUILD_BASE}" != "${CURRENT_SHA}" ]]; then
         # SHAs differ — check whether any backend-relevant paths changed.
-        if ! RELEVANT_CHANGES=$(git diff --name-only "${BUILD_BASE}" "${CURRENT_SHA}" -- $BACKEND_PATHS 2>/dev/null); then
+        if ! RELEVANT_CHANGES=$(git diff --name-only "${BUILD_BASE}" "${CURRENT_SHA}" -- {{ backend_paths }} 2>/dev/null); then
             # Build SHA is no longer reachable (e.g. after rebase/force-push).
             echo "ERROR: goose binary build SHA is no longer in history — binary may be stale"
             echo "   Binary built from: ${BUILD_REF}"
