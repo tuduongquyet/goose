@@ -1,21 +1,13 @@
 import { useCallback, useRef } from "react";
 import { useChatStore } from "../stores/chatStore";
 import { useChatSessionStore } from "../stores/chatSessionStore";
-import { clearReplayBuffer, getAndDeleteReplayBuffer } from "./replayBuffer";
 import {
   type ChatAttachmentDraft,
-  type Message,
   createSystemNotificationMessage,
   createUserMessage,
-  getTextContent,
 } from "@/shared/types/messages";
 import type { ChatState, TokenState } from "@/shared/types/chat";
-import {
-  acpSendMessage,
-  acpCancelSession,
-  acpLoadSession,
-} from "@/shared/api/acp";
-import { getGooseSessionId } from "@/shared/api/acpSessionTracker";
+import { acpSendMessage, acpCancelSession } from "@/shared/api/acp";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import {
   getSessionTitleFromDraft,
@@ -28,50 +20,12 @@ import {
   buildAttachmentPromptPreamble,
   buildMessageAttachments,
 } from "../lib/attachments";
-
-// TODO: Remove this fallback once goose2 has first-class /-commands.
-const MANUAL_COMPACT_TRIGGER = "/compact";
-
-function isManualCompactCommandMessage(message: Message): boolean {
-  if (message.role !== "user") {
-    return false;
-  }
-
-  const normalizedText = getTextContent(message).replace(/\s+/g, "");
-  if (!normalizedText) {
-    return false;
-  }
-
-  return normalizedText.replaceAll(MANUAL_COMPACT_TRIGGER, "").length === 0;
-}
-
-function removeManualCompactCommandMessages(messages: Message[]): Message[] {
-  return messages.filter((message) => !isManualCompactCommandMessage(message));
-}
-
-function getErrorMessage(error: unknown): string {
-  // Tauri command rejections typically arrive as plain strings, so handle
-  // that shape first before falling back to standard Error objects.
-  if (typeof error === "string" && error.trim()) {
-    return error;
-  }
-
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "message" in error &&
-    typeof error.message === "string" &&
-    error.message.trim()
-  ) {
-    return error.message;
-  }
-
-  return "Unknown error";
-}
+import {
+  getBuiltinSlashCommand,
+  isSlashCommandText,
+} from "../lib/slashCommands";
+import { getChatErrorMessage } from "../lib/chatErrorMessage";
+import { executeSlashCommand } from "../lib/slashCommandExecution";
 
 function markMessageStopped(sessionId: string, messageId: string) {
   useChatStore.getState().updateMessage(sessionId, messageId, (message) => {
@@ -150,6 +104,12 @@ export function useChat(
     [personaInfo],
   );
 
+  const getWorkingDir = useCallback(
+    () =>
+      useChatSessionStore.getState().activeWorkspaceBySession[sessionId]?.path,
+    [sessionId],
+  );
+
   const sendMessage = useCallback(
     async (
       text: string,
@@ -158,13 +118,13 @@ export function useChat(
     ) => {
       const sid = sessionId.slice(0, 8);
       const tSendStart = performance.now();
-      const images = buildAcpImages(attachments);
+      const trimmedText = text.trim();
       const hasAttachments = (attachments?.length ?? 0) > 0;
       const currentChatState = useChatStore
         .getState()
         .getSessionRuntime(sessionId).chatState;
       if (
-        (!text.trim() && !hasAttachments) ||
+        (!trimmedText && !hasAttachments) ||
         currentChatState === "streaming" ||
         currentChatState === "thinking" ||
         currentChatState === "compacting"
@@ -182,6 +142,33 @@ export function useChat(
       const providerId = providerOverride ?? agent?.provider ?? "goose";
       const systemPrompt =
         systemPromptOverride ?? agent?.systemPrompt ?? undefined;
+      const builtinSlashCommand = getBuiltinSlashCommand(trimmedText);
+      const isTopLevelSlashCommand = isSlashCommandText(trimmedText);
+
+      if (isTopLevelSlashCommand) {
+        await executeSlashCommand({
+          sessionId,
+          commandText: trimmedText,
+          effectivePersonaInfo,
+          builtinCommand: builtinSlashCommand,
+          showCommandMessage: true,
+          clearDraftWhenAccepted: true,
+          notifyMessageAccepted: true,
+          ensurePrepared: options?.ensurePrepared,
+          onMessageAccepted: options?.onMessageAccepted,
+          getWorkingDir,
+          setAbortController: (abortController) => {
+            abortRef.current = abortController;
+          },
+          setStreamingPersonaId: (personaId) => {
+            streamingPersonaIdRef.current = personaId;
+          },
+          store,
+        });
+        return;
+      }
+
+      const images = buildAcpImages(attachments);
 
       // Ensure active session
       store.setActiveSession(sessionId);
@@ -189,7 +176,7 @@ export function useChat(
 
       // Create and add user message
       const userMessage = createUserMessage(
-        text,
+        trimmedText,
         buildMessageAttachments(attachments),
       );
       if (effectivePersonaInfo) {
@@ -226,7 +213,7 @@ export function useChat(
       // via the acp:session_info event.
       if (session && isDefaultChatTitle(session.title)) {
         sessionStore.updateSession(sessionId, {
-          title: getSessionTitleFromDraft(text, attachments),
+          title: getSessionTitleFromDraft(trimmedText, attachments),
           updatedAt: new Date().toISOString(),
         });
       } else {
@@ -251,7 +238,7 @@ export function useChat(
         // driver doesn't send an empty text content block that goose rejects.
         const attachmentPromptPreamble =
           buildAttachmentPromptPreamble(attachments);
-        const promptBody = text.trim() || (images?.length ? " " : text);
+        const promptBody = trimmedText || (images?.length ? " " : text);
         const acpPrompt = `${attachmentPromptPreamble}${promptBody}`;
         const tAcp = performance.now();
         perfLog(
@@ -275,7 +262,7 @@ export function useChat(
         if (err instanceof DOMException && err.name === "AbortError") {
           store.setChatState(sessionId, "idle");
         } else {
-          const errorMessage = getErrorMessage(err);
+          const errorMessage = getChatErrorMessage(err);
           const liveStore = useChatStore.getState();
           const { streamingMessageId } = liveStore.getSessionRuntime(sessionId);
           if (streamingMessageId) {
@@ -313,6 +300,7 @@ export function useChat(
       systemPromptOverride,
       resolvePersonaInfo,
       options,
+      getWorkingDir,
     ],
   );
 
@@ -376,83 +364,24 @@ export function useChat(
     store.setPendingAssistantProvider(sessionId, null);
   }, [sessionId, store]);
 
-  const getWorkingDir = useCallback(
-    () =>
-      useChatSessionStore.getState().activeWorkspaceBySession[sessionId]?.path,
-    [sessionId],
-  );
-
   const compactConversation = useCallback(async () => {
-    const currentChatState = useChatStore
-      .getState()
-      .getSessionRuntime(sessionId).chatState;
-    if (currentChatState !== "idle") {
-      return;
-    }
-
-    const effectivePersonaInfo = resolvePersonaInfo();
-    const gooseSessionId = getGooseSessionId(
+    await executeSlashCommand({
       sessionId,
-      effectivePersonaInfo?.id,
-    );
-
-    if (!gooseSessionId) {
-      const errorMessage =
-        "Session not prepared. Send a message before compacting.";
-      store.addMessage(
-        sessionId,
-        createSystemNotificationMessage(errorMessage, "error"),
-      );
-      store.setError(sessionId, errorMessage);
-      return;
-    }
-
-    store.setActiveSession(sessionId);
-    store.setChatState(sessionId, "compacting");
-    store.setStreamingMessageId(sessionId, null);
-    store.setError(sessionId, null);
-    store.setSessionLoading(sessionId, true);
-    clearReplayBuffer(sessionId);
-
-    try {
-      const sendOptions = effectivePersonaInfo?.id
-        ? { personaId: effectivePersonaInfo.id }
-        : undefined;
-      await acpSendMessage(sessionId, MANUAL_COMPACT_TRIGGER, sendOptions);
-
-      // Command responses are streamed via prompt notifications, but the ACP
-      // layer does not currently forward history replacement events. Drop those
-      // transient chunks and refresh the session from replay instead.
-      clearReplayBuffer(sessionId);
-      const workingDir = getWorkingDir();
-      await acpLoadSession(sessionId, gooseSessionId, workingDir);
-
-      store.setSessionLoading(sessionId, false);
-
-      const buffer = getAndDeleteReplayBuffer(sessionId);
-      if (buffer) {
-        store.setMessages(
-          sessionId,
-          removeManualCompactCommandMessages(buffer),
-        );
-      }
-    } catch (err) {
-      clearReplayBuffer(sessionId);
-      store.setSessionLoading(sessionId, false);
-
-      const errorMessage = getErrorMessage(err);
-      store.addMessage(
-        sessionId,
-        createSystemNotificationMessage(errorMessage, "error"),
-      );
-      store.setError(sessionId, errorMessage);
-    } finally {
-      store.setChatState(sessionId, "idle");
-      store.setStreamingMessageId(sessionId, null);
-      store.setPendingAssistantProvider(sessionId, null);
-      store.setSessionLoading(sessionId, false);
-    }
-  }, [getWorkingDir, resolvePersonaInfo, sessionId, store]);
+      commandText: "/compact",
+      effectivePersonaInfo: resolvePersonaInfo(),
+      builtinCommand: getBuiltinSlashCommand("/compact"),
+      ensurePrepared: options?.ensurePrepared,
+      onMessageAccepted: options?.onMessageAccepted,
+      getWorkingDir,
+      setAbortController: (abortController) => {
+        abortRef.current = abortController;
+      },
+      setStreamingPersonaId: (personaId) => {
+        streamingPersonaIdRef.current = personaId;
+      },
+      store,
+    });
+  }, [getWorkingDir, options, resolvePersonaInfo, sessionId, store]);
 
   const stopStreaming = stopGeneration;
 

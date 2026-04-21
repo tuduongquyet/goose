@@ -140,6 +140,12 @@ export function ChatView({ sessionId, onCreateProject }: ChatViewProps) {
             }
             contextTokens={controller.tokenState.accumulatedTotal}
             contextLimit={controller.tokenState.contextLimit}
+            onCompactContext={controller.compactConversation}
+            canCompactContext={
+              controller.chatState === "idle" &&
+              controller.tokenState.accumulatedTotal > 0
+            }
+            isCompactingContext={controller.chatState === "compacting"}
           />
         </div>
 

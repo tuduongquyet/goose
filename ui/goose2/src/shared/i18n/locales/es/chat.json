@@ -108,7 +108,7 @@
   },
   "input": {
     "ariaLabel": "Entrada de mensaje del chat",
-    "placeholder": "Enviar mensaje a {{agent}}, usa @ para mencionar personas"
+    "placeholder": "Enviar mensaje a {{agent}}, usa @ para mencionar personas y / para comandos"
   },
   "loading": {
     "compacting": "Compactando conversación...",
@@ -119,6 +119,11 @@
     "ariaLabel": "Sugerencias de menciones",
     "title": "Menciona una persona",
     "filesTitle": "Archivos"
+  },
+  "slashCommands": {
+    "ariaLabel": "Sugerencias de comandos slash",
+    "title": "Comandos",
+    "empty": "No hay comandos coincidentes"
   },
   "message": {
     "copied": "Copiado",

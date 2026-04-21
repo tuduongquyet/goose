@@ -108,7 +108,7 @@
   },
   "input": {
     "ariaLabel": "Chat message input",
-    "placeholder": "Message {{agent}}, @ to mention personas"
+    "placeholder": "Message {{agent}}, @ to mention personas, / for commands"
   },
   "loading": {
     "compacting": "Compacting conversation...",
@@ -119,6 +119,11 @@
     "ariaLabel": "Mention suggestions",
     "title": "Mention a persona",
     "filesTitle": "Files"
+  },
+  "slashCommands": {
+    "ariaLabel": "Slash command suggestions",
+    "title": "Commands",
+    "empty": "No matching commands"
   },
   "message": {
     "copied": "Copied",

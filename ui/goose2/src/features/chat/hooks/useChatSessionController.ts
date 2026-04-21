@@ -389,6 +389,7 @@ export function useChatSessionController({
     chatState,
     tokenState,
     sendMessage,
+    compactConversation,
     stopStreaming,
     streamingMessageId,
   } = useChat(
@@ -650,6 +651,7 @@ export function useChatSessionController({
     isLoadingHistory,
     queue,
     handleSend,
+    compactConversation,
     draftValue,
     handleDraftChange,
     scrollTarget,

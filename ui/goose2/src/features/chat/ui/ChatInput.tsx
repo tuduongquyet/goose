@@ -7,7 +7,9 @@ import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Popover, PopoverAnchor } from "@/shared/ui/popover";
 import { MentionAutocomplete } from "./MentionAutocomplete";
+import { useChatInputAutocompleteHandlers } from "../hooks/useChatInputAutocompleteHandlers";
 import { useMentionHandlers } from "../hooks/useMentionHandlers";
+import { useSlashCommandAutocomplete } from "../hooks/useSlashCommandAutocomplete";
 import { ChatInputToolbar } from "./ChatInputToolbar";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
 import { TooltipProvider } from "@/shared/ui/tooltip";
@@ -19,6 +21,7 @@ import {
 } from "../hooks/useChatInputAttachments";
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
+import { SlashCommandAutocomplete } from "./SlashCommandAutocomplete";
 import type { ChatInputProps } from "../types";
 
 export function ChatInput({
@@ -77,15 +80,12 @@ export function ChatInput({
     removeAttachment,
     clearAttachments,
   } = useChatInputAttachments();
-
   const resetTextarea = useCallback(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
   }, []);
-
   const hasQueuedMessage = queuedMessage !== null;
-
   const dictation = useVoiceDictation({
     text,
     setText,
@@ -96,7 +96,6 @@ export function ChatInput({
     resetTextarea,
     isSendLocked: hasQueuedMessage || disabled,
   });
-
   const activePersona = useMemo(
     () => personas.find((persona) => persona.id === selectedPersonaId) ?? null,
     [personas, selectedPersonaId],
@@ -113,7 +112,21 @@ export function ChatInput({
     (text.trim().length > 0 || attachments.length > 0) &&
     !hasQueuedMessage &&
     !disabled;
-
+  const {
+    slashCommandOpen,
+    slashCommandSelectedIndex,
+    filteredSlashCommands,
+    detectSlashCommand,
+    closeSlashCommand,
+    navigateSlashCommand,
+    confirmSlashCommand,
+    handleSlashCommandSelect,
+    setSlashCommandSelectedIndex,
+  } = useSlashCommandAutocomplete({
+    text,
+    setText,
+    textareaRef,
+  });
   const {
     mentionOpen,
     mentionSelectedIndex,
@@ -151,7 +164,6 @@ export function ChatInput({
   }, []);
 
   useEffect(() => textareaRef.current?.focus(), []);
-
   const handleSend = useCallback(() => {
     if (!canSend) {
       return;
@@ -195,43 +207,23 @@ export function ChatInput({
     setText,
     text,
   ]);
-
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (mentionOpen) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeMention();
-        return;
-      }
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        navigateMention(event.key === "ArrowDown" ? "down" : "up");
-        return;
-      }
-      if (event.key === "Enter" || event.key === "Tab") {
-        const item = confirmMention();
-        if (item) {
-          event.preventDefault();
-          handleMentionConfirm(item);
-          return;
-        }
-      }
-    }
-    if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
-      event.preventDefault();
-      handleSend();
-    }
-  };
-
-  const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = event.target.value;
-    setText(value);
-    const cursorPosition = event.target.selectionStart ?? value.length;
-    detectMention(value, cursorPosition);
-    const textarea = event.target;
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-  };
+  const { handleBlur, handleKeyDown, handleInput, handleSelectionChange } =
+    useChatInputAutocompleteHandlers({
+      mentionOpen,
+      detectMention,
+      closeMention,
+      navigateMention,
+      confirmMention,
+      handleMentionConfirm,
+      slashCommandOpen,
+      detectSlashCommand,
+      closeSlashCommand,
+      navigateSlashCommand,
+      confirmSlashCommand,
+      handleSlashCommandSelect,
+      handleSend,
+      setText,
+    });
 
   const handlePaste = useCallback(
     (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -322,7 +314,6 @@ export function ChatInput({
   const effectivePlaceholder = t("input.placeholder", {
     agent: agentDisplayName,
   });
-
   const handleClearStickyPersona = useCallback(() => {
     onPersonaChange?.(null);
   }, [onPersonaChange]);
@@ -331,7 +322,7 @@ export function ChatInput({
     <TooltipProvider delayDuration={300}>
       <div className={cn("px-4 pb-6 pt-2", className)}>
         <div className="mx-auto max-w-3xl">
-          <Popover open={mentionOpen}>
+          <Popover open={slashCommandOpen || mentionOpen}>
             {/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone for file attachments */}
             <div
               ref={containerRef}
@@ -355,10 +346,18 @@ export function ChatInput({
                 </div>
               )}
 
+              <SlashCommandAutocomplete
+                commands={filteredSlashCommands}
+                isOpen={slashCommandOpen}
+                onSelect={handleSlashCommandSelect}
+                onHighlightIndex={setSlashCommandSelectedIndex}
+                selectedIndex={slashCommandSelectedIndex}
+              />
+
               <MentionAutocomplete
                 filteredPersonas={filteredPersonas}
                 filteredFiles={filteredFiles}
-                isOpen={mentionOpen}
+                isOpen={!slashCommandOpen && mentionOpen}
                 onSelectPersona={handlePersonaMentionSelect}
                 onSelectFile={handleFileMentionSelect}
                 onClose={closeMention}
@@ -410,8 +409,12 @@ export function ChatInput({
                   ref={textareaRef}
                   value={text}
                   onChange={handleInput}
+                  onBlur={handleBlur}
+                  onClick={handleSelectionChange}
                   onKeyDown={handleKeyDown}
+                  onKeyUp={handleSelectionChange}
                   onPaste={handlePaste}
+                  onSelect={handleSelectionChange}
                   placeholder={
                     dictation.isRecording
                       ? t("toolbar.voiceInputRecording")
