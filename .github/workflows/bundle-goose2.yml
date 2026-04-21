@@ -187,7 +187,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: ${{ inputs.signing && 'Developer ID Application' || '' }}
           APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
-          APPLE_ID_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
         working-directory: ui/goose2
         run: |
@@ -368,7 +368,7 @@ jobs:
         env:
           APPLE_SIGNING_IDENTITY: ${{ inputs.signing && 'Developer ID Application' || '' }}
           APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
-          APPLE_ID_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
+          APPLE_PASSWORD: ${{ inputs.signing && secrets.APPLE_ID_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
         working-directory: ui/goose2
         run: |
