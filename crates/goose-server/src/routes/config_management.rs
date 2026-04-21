@@ -426,9 +426,7 @@ pub async fn get_slash_commands(
     }
 
     let working_dir = query.working_dir.map(std::path::PathBuf::from);
-    for source in
-        goose::agents::platform_extensions::skills::list_installed_skills(working_dir.as_deref())
-    {
+    for source in goose::skills::list_installed_skills(working_dir.as_deref()) {
         commands.push(SlashCommand {
             command: source.name,
             help: source.description,

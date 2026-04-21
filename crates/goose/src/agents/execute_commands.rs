@@ -140,8 +140,8 @@ impl Agent {
     }
 
     async fn handle_skills_command(&self, session_id: &str) -> Result<Option<Message>> {
-        use super::platform_extensions::skills::list_installed_skills;
         use super::platform_extensions::SourceKind;
+        use crate::skills::list_installed_skills;
 
         let working_dir = self
             .config

@@ -1,48 +1,30 @@
 //! Filesystem-backed CRUD for [`SourceEntry`] values exchanged over ACP custom
-//! methods. A source is a user-editable entity stored under a per-scope root
-//! directory — `~/.agents/skills` for global sources and `<project>/.goose/skills`
-//! for project-specific sources.
+//! methods. Writes go to the canonical per-scope directory — `~/.agents/skills`
+//! for global sources and `<project>/.goose/skills` for project-specific ones.
+//! `list_sources` reads from every location the agent loads skills from so the
+//! UI sees the same set of skills the runtime uses.
 
-use crate::agents::platform_extensions::parse_frontmatter;
+use super::{
+    discover_skills_with_scope, global_skills_dir, project_skills_dir, SkillFrontmatter,
+};
+use crate::agents::platform_extensions::{parse_frontmatter, Source, SourceKind};
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use sacp::Error;
-use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-#[derive(Deserialize)]
-struct SkillFront {
-    #[serde(default)]
-    description: String,
-}
-
-const GLOBAL_SKILLS_SUBPATH: &[&str] = &[".agents", "skills"];
-const PROJECT_SKILLS_SUBPATH: &[&str] = &[".goose", "skills"];
-
-fn home_dir() -> Result<PathBuf, Error> {
-    dirs::home_dir()
+fn skills_dir_global_or_err() -> Result<PathBuf, Error> {
+    global_skills_dir()
         .ok_or_else(|| Error::internal_error().data("Could not determine home directory"))
 }
 
-fn skills_dir_global() -> Result<PathBuf, Error> {
-    let mut dir = home_dir()?;
-    for part in GLOBAL_SKILLS_SUBPATH {
-        dir = dir.join(part);
-    }
-    Ok(dir)
-}
-
-fn skills_dir_project(project_dir: &str) -> Result<PathBuf, Error> {
+fn skills_dir_project_or_err(project_dir: &str) -> Result<PathBuf, Error> {
     if project_dir.trim().is_empty() {
         return Err(
             Error::invalid_params().data("projectDir must not be empty when global is false")
         );
     }
-    let mut dir = PathBuf::from(project_dir);
-    for part in PROJECT_SKILLS_SUBPATH {
-        dir = dir.join(part);
-    }
-    Ok(dir)
+    Ok(project_skills_dir(Path::new(project_dir)))
 }
 
 fn source_base_dir(
@@ -53,12 +35,12 @@ fn source_base_dir(
     match source_type {
         SourceType::Skill => {
             if global {
-                skills_dir_global()
+                skills_dir_global_or_err()
             } else {
                 let pd = project_dir.ok_or_else(|| {
                     Error::invalid_params().data("projectDir is required when global is false")
                 })?;
-                skills_dir_project(pd)
+                skills_dir_project_or_err(pd)
             }
         }
     }
@@ -109,7 +91,7 @@ fn parse_skill_frontmatter(raw: &str) -> (String, String) {
     if !raw.trim_start().starts_with("---") {
         return (String::new(), raw.to_string());
     }
-    match parse_frontmatter::<SkillFront>(raw) {
+    match parse_frontmatter::<SkillFrontmatter>(raw) {
         Ok(Some((meta, body))) => (meta.description, body),
         _ => (String::new(), raw.to_string()),
     }
@@ -131,6 +113,25 @@ fn source_entry(
         directory: dir.to_string_lossy().to_string(),
         global,
     }
+}
+
+fn source_type_for(kind: SourceKind) -> Option<SourceType> {
+    match kind {
+        SourceKind::Skill => Some(SourceType::Skill),
+        _ => None,
+    }
+}
+
+fn to_source_entry(source: &Source, global: bool) -> Option<SourceEntry> {
+    let source_type = source_type_for(source.kind)?;
+    Some(source_entry(
+        source_type,
+        &source.name,
+        &source.description,
+        &source.content,
+        &source.path,
+        global,
+    ))
 }
 
 pub fn create_source(
@@ -219,64 +220,28 @@ pub fn list_sources(
     source_type: Option<SourceType>,
     project_dir: Option<&str>,
 ) -> Result<Vec<SourceEntry>, Error> {
-    let kinds: Vec<SourceType> = match source_type {
-        Some(k) => vec![k],
-        None => vec![SourceType::Skill],
-    };
+    let type_filter = source_type;
 
-    let mut sources = Vec::new();
-    for kind in kinds {
-        match kind {
-            SourceType::Skill => {
-                if let Some(pd) = project_dir {
-                    if !pd.trim().is_empty() {
-                        let dir = skills_dir_project(pd)?;
-                        sources.extend(read_skill_dir(&dir, false)?);
-                    }
+    let working_dir = project_dir
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from);
+
+    let mut sources: Vec<SourceEntry> = discover_skills_with_scope(working_dir.as_deref())
+        .iter()
+        .filter_map(|(s, global)| {
+            let entry = to_source_entry(s, *global)?;
+            if let Some(t) = type_filter {
+                if entry.source_type != t {
+                    return None;
                 }
-                let dir = skills_dir_global()?;
-                sources.extend(read_skill_dir(&dir, true)?);
             }
-        }
-    }
+            Some(entry)
+        })
+        .collect();
+
     sources.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(sources)
-}
-
-fn read_skill_dir(dir: &Path, global: bool) -> Result<Vec<SourceEntry>, Error> {
-    if !dir.exists() {
-        return Ok(Vec::new());
-    }
-    let entries = fs::read_dir(dir)
-        .map_err(|e| Error::internal_error().data(format!("Failed to read skills dir: {e}")))?;
-
-    let mut out = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let skill_md = path.join("SKILL.md");
-        if !skill_md.exists() {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
-        let raw = fs::read_to_string(&skill_md).unwrap_or_default();
-        let (description, content) = parse_skill_frontmatter(&raw);
-        out.push(source_entry(
-            SourceType::Skill,
-            &name,
-            &description,
-            &content,
-            &path,
-            global,
-        ));
-    }
-    Ok(out)
 }
 
 pub fn export_source(

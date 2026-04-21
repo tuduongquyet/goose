@@ -6,7 +6,6 @@ pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
 pub mod orchestrator;
-pub mod skills;
 pub mod summarize;
 pub mod summon;
 pub mod todo;
@@ -248,15 +247,15 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
         );
 
         map.insert(
-            skills::EXTENSION_NAME,
+            crate::skills::EXTENSION_NAME,
             PlatformExtensionDef {
-                name: skills::EXTENSION_NAME,
+                name: crate::skills::EXTENSION_NAME,
                 display_name: "Skills",
                 description: "Discover and provide skill instructions from filesystem and builtins",
                 default_enabled: true,
                 unprefixed_tools: true,
                 hidden: false,
-                client_factory: |ctx| Box::new(skills::SkillsClient::new(ctx).unwrap()),
+                client_factory: |ctx| Box::new(crate::skills::SkillsClient::new(ctx).unwrap()),
             },
         );
 
