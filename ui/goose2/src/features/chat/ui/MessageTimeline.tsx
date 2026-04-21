@@ -4,6 +4,7 @@ import { cn } from "@/shared/lib/cn";
 import { useLocaleFormatting } from "@/shared/i18n";
 import { MessageBubble } from "./MessageBubble";
 import { getTextContent, type Message } from "@/shared/types/messages";
+import { sanitizeMessagesForDisplay } from "../lib/messageDisplay";
 
 interface MessageTimelineProps {
   messages: Message[];
@@ -66,15 +67,16 @@ export function MessageTimeline({
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const isNearBottomRef = useRef(true);
   const [pulsingMessageId, setPulsingMessageId] = useState<string | null>(null);
-  const visibleMessages = messages.filter(
-    (m) =>
-      m.metadata?.userVisible !== false &&
-      !(
-        m.role === "assistant" &&
-        m.content.length === 0 &&
-        m.metadata?.completionStatus === "inProgress"
-      ),
-  );
+  const visibleMessages = useMemo(() => {
+    const displayMessages = sanitizeMessagesForDisplay(
+      messages.filter((message) => message.metadata?.userVisible !== false),
+    );
+
+    return displayMessages.filter(
+      (message) =>
+        !(message.role === "assistant" && message.content.length === 0),
+    );
+  }, [messages]);
   const resolvedScrollTargetMessageId = useMemo(() => {
     if (scrollTargetMessageId) {
       const exactMatch = visibleMessages.find(
@@ -105,7 +107,7 @@ export function MessageTimeline({
         behavior: "smooth",
       });
     }
-  }, [messages, streamingMessageId]);
+  }, [visibleMessages, streamingMessageId]);
 
   useEffect(() => {
     if (!resolvedScrollTargetMessageId) {
