@@ -1,8 +1,7 @@
 //! Filesystem-backed CRUD for [`SourceEntry`] values exchanged over ACP custom
-//! methods. Writes go to the canonical per-scope directory — `~/.agents/skills`
-//! for global sources and `<project>/.goose/skills` for project-specific ones.
-//! `list_sources` reads from every location the agent loads skills from so the
-//! UI sees the same set of skills the runtime uses.
+//! methods. A source is a user-editable entity stored under a per-scope root
+//! directory — `~/.agents/skills` for global sources and `<project>/.goose/skills`
+//! for project-specific sources.
 
 use crate::agents::platform_extensions::{parse_frontmatter, Source, SourceKind};
 use crate::skills::{
