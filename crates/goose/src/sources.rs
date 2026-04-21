@@ -4,10 +4,10 @@
 //! `list_sources` reads from every location the agent loads skills from so the
 //! UI sees the same set of skills the runtime uses.
 
-use super::{
+use crate::agents::platform_extensions::{parse_frontmatter, Source, SourceKind};
+use crate::skills::{
     discover_skills_with_scope, global_skills_dir, project_skills_dir, SkillFrontmatter,
 };
-use crate::agents::platform_extensions::{parse_frontmatter, Source, SourceKind};
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use sacp::Error;

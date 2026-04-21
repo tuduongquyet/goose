@@ -1,10 +1,9 @@
-//! Everything related to skills: filesystem discovery (`SKILL.md` walking +
-//! built-ins), runtime MCP client (`client` submodule), and user-facing CRUD
-//! over ACP (`sources` submodule).
+//! Everything specific to skills: filesystem discovery (`SKILL.md` walking +
+//! built-ins) and the runtime MCP client (`client` submodule). User-facing
+//! CRUD lives in `crate::sources`, which generalizes across source types.
 
 mod builtin;
 pub mod client;
-pub mod sources;
 
 pub use client::{SkillsClient, EXTENSION_NAME};
 

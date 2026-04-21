@@ -3120,7 +3120,7 @@ impl GooseAcpAgent {
         &self,
         req: CreateSourceRequest,
     ) -> Result<CreateSourceResponse, sacp::Error> {
-        let source = goose::skills::sources::create_source(
+        let source = goose::sources::create_source(
             req.source_type,
             &req.name,
             &req.description,
@@ -3136,7 +3136,7 @@ impl GooseAcpAgent {
         &self,
         req: ListSourcesRequest,
     ) -> Result<ListSourcesResponse, sacp::Error> {
-        let sources = goose::skills::sources::list_sources(req.source_type, req.project_dir.as_deref())?;
+        let sources = goose::sources::list_sources(req.source_type, req.project_dir.as_deref())?;
         Ok(ListSourcesResponse { sources })
     }
 
@@ -3145,7 +3145,7 @@ impl GooseAcpAgent {
         &self,
         req: UpdateSourceRequest,
     ) -> Result<UpdateSourceResponse, sacp::Error> {
-        let source = goose::skills::sources::update_source(
+        let source = goose::sources::update_source(
             req.source_type,
             &req.name,
             &req.description,
@@ -3161,7 +3161,7 @@ impl GooseAcpAgent {
         &self,
         req: DeleteSourceRequest,
     ) -> Result<EmptyResponse, sacp::Error> {
-        goose::skills::sources::delete_source(
+        goose::sources::delete_source(
             req.source_type,
             &req.name,
             req.global,
@@ -3175,7 +3175,7 @@ impl GooseAcpAgent {
         &self,
         req: ExportSourceRequest,
     ) -> Result<ExportSourceResponse, sacp::Error> {
-        let (json, filename) = goose::skills::sources::export_source(
+        let (json, filename) = goose::sources::export_source(
             req.source_type,
             &req.name,
             req.global,
@@ -3190,7 +3190,7 @@ impl GooseAcpAgent {
         req: ImportSourcesRequest,
     ) -> Result<ImportSourcesResponse, sacp::Error> {
         let sources =
-            goose::skills::sources::import_sources(&req.data, req.global, req.project_dir.as_deref())?;
+            goose::sources::import_sources(&req.data, req.global, req.project_dir.as_deref())?;
         Ok(ImportSourcesResponse { sources })
     }
 
