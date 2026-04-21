@@ -17,6 +17,7 @@ import { useAgentStore } from "@/features/agents/stores/agentStore";
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { findExistingDraft } from "@/features/chat/lib/newChat";
 import { DEFAULT_CHAT_TITLE } from "@/features/chat/lib/sessionTitle";
+import { removeMutatingSlashCommandUserMessages } from "@/features/chat/lib/slashCommands";
 import { useAppStartup } from "./hooks/useAppStartup";
 import { AppShellContent } from "./ui/AppShellContent";
 import { acpPrepareSession } from "@/shared/api/acp";
@@ -130,9 +131,12 @@ export function AppShell({ children }: { children?: React.ReactNode }) {
       const buffer = getAndDeleteReplayBuffer(sessionId);
       const replayStats = getReplayPerf(sessionId);
       clearReplayPerf(sessionId);
-      if (buffer && buffer.length > 0) {
-        useChatStore.getState().setMessages(sessionId, buffer);
-      }
+      useChatStore
+        .getState()
+        .setMessages(
+          sessionId,
+          removeMutatingSlashCommandUserMessages(buffer ?? []),
+        );
       const t2 = performance.now();
       perfLog(
         `[perf:load] ${sid} replay: notifs=${replayStats?.count ?? 0} span=${replayStats?.spanMs.toFixed(1) ?? "0"}ms msgs=${buffer?.length ?? 0} flush=${(t2 - tFlush).toFixed(1)}ms total=${(t2 - t0).toFixed(1)}ms`,

@@ -1,14 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   filterBuiltinSlashCommands,
   type BuiltinSlashCommand,
 } from "../lib/slashCommands";
-
-interface SlashCommandAutocompleteOptions {
-  text: string;
-  setText: (value: string) => void;
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
-}
 
 function createClosedState() {
   return {
@@ -18,37 +12,13 @@ function createClosedState() {
   };
 }
 
-export function useSlashCommandAutocomplete({
-  text,
-  setText,
-  textareaRef,
-}: SlashCommandAutocompleteOptions) {
+export function useSlashCommandAutocomplete() {
   const [slashState, setSlashState] = useState(createClosedState);
-  const pendingCursorRef = useRef<number | null>(null);
 
   const filteredCommands = useMemo(
     () => filterBuiltinSlashCommands(slashState.query),
     [slashState.query],
   );
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: text triggers the effect after setText flushes
-  useEffect(() => {
-    if (pendingCursorRef.current == null) {
-      return;
-    }
-
-    const textarea = textareaRef.current;
-    if (!textarea) {
-      return;
-    }
-
-    const cursorPosition = pendingCursorRef.current;
-    pendingCursorRef.current = null;
-    textarea.focus();
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
-    textarea.setSelectionRange(cursorPosition, cursorPosition);
-  }, [text, textareaRef]);
 
   useEffect(() => {
     if (!slashState.isOpen) {
@@ -158,16 +128,6 @@ export function useSlashCommandAutocomplete({
     );
   }, [filteredCommands, slashState.isOpen, slashState.selectedIndex]);
 
-  const handleSlashCommandSelect = useCallback(
-    (command: BuiltinSlashCommand) => {
-      const nextText = `${command.command} `;
-      pendingCursorRef.current = nextText.length;
-      setText(nextText);
-      closeSlashCommand();
-    },
-    [closeSlashCommand, setText],
-  );
-
   return {
     slashCommandOpen: slashState.isOpen,
     slashCommandSelectedIndex: slashState.selectedIndex,
@@ -176,7 +136,6 @@ export function useSlashCommandAutocomplete({
     closeSlashCommand,
     navigateSlashCommand,
     confirmSlashCommand,
-    handleSlashCommandSelect,
     setSlashCommandSelectedIndex,
   };
 }

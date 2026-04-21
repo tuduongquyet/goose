@@ -79,18 +79,20 @@ describe("ChatInput slash commands", () => {
     expect(screen.queryByText("/compact")).not.toBeInTheDocument();
   });
 
-  it("inserts the selected command with a trailing space on mouse click", async () => {
+  it("sends the selected command immediately on mouse click", async () => {
     const user = userEvent.setup();
-    render(<ChatInput onSend={vi.fn()} />);
+    const onSend = vi.fn();
+    render(<ChatInput onSend={onSend} />);
 
     const input = screen.getByRole("textbox");
     await user.type(input, "/cl");
     await user.click(screen.getByRole("option", { name: /\/clear/i }));
 
-    expect(input).toHaveValue("/clear ");
+    expect(onSend).toHaveBeenCalledWith("/clear", undefined, undefined);
+    expect(input).toHaveValue("");
   });
 
-  it("inserts with Enter first, then sends the trimmed command on Enter again", async () => {
+  it("sends the highlighted command immediately on Enter", async () => {
     const onSend = vi.fn();
     const user = userEvent.setup();
     render(<ChatInput onSend={onSend} />);
@@ -99,10 +101,7 @@ describe("ChatInput slash commands", () => {
     await user.type(input, "/cl");
     await user.keyboard("{Enter}");
 
-    expect(input).toHaveValue("/clear ");
-
-    await user.keyboard("{Enter}");
-
     expect(onSend).toHaveBeenCalledWith("/clear", undefined, undefined);
+    expect(input).toHaveValue("");
   });
 });

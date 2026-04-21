@@ -12,8 +12,7 @@ import { useChatStore, type ChatStore } from "../stores/chatStore";
 import { getChatErrorMessage } from "./chatErrorMessage";
 import {
   getBuiltinSlashCommand,
-  getLeadingSlashCommandName,
-  removeSlashCommandUserMessages,
+  removeMutatingSlashCommandUserMessages,
   type BuiltinSlashCommand,
 } from "./slashCommands";
 
@@ -67,8 +66,6 @@ export async function executeSlashCommand({
     return;
   }
 
-  const commandName =
-    builtinCommand?.name ?? getLeadingSlashCommandName(commandText);
   const mutatesHistory = builtinCommand?.mutatesHistory ?? false;
 
   store.setActiveSession(sessionId);
@@ -128,9 +125,7 @@ export async function executeSlashCommand({
       const replayedMessages = getAndDeleteReplayBuffer(sessionId) ?? [];
       store.setMessages(
         sessionId,
-        commandName
-          ? removeSlashCommandUserMessages(replayedMessages, commandName)
-          : replayedMessages,
+        removeMutatingSlashCommandUserMessages(replayedMessages),
       );
     }
 

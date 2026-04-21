@@ -63,6 +63,9 @@ export const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
 const BUILTIN_SLASH_COMMANDS_BY_NAME = new Map(
   BUILTIN_SLASH_COMMANDS.map((command) => [command.name, command]),
 );
+const MUTATING_BUILTIN_SLASH_COMMANDS = BUILTIN_SLASH_COMMANDS.filter(
+  (command) => command.mutatesHistory,
+);
 
 export function getLeadingSlashCommandName(
   text: string | null | undefined,
@@ -143,5 +146,16 @@ export function removeSlashCommandUserMessages(
 ): Message[] {
   return messages.filter(
     (message) => !isSlashCommandUserMessage(message, commandName),
+  );
+}
+
+export function removeMutatingSlashCommandUserMessages(
+  messages: Message[],
+): Message[] {
+  return messages.filter(
+    (message) =>
+      !MUTATING_BUILTIN_SLASH_COMMANDS.some((command) =>
+        isSlashCommandUserMessage(message, command.name),
+      ),
   );
 }

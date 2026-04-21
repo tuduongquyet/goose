@@ -22,6 +22,7 @@ import {
 import { ChatInputAttachments } from "./ChatInputAttachments";
 import { useVoiceDictation } from "../hooks/useVoiceDictation";
 import { SlashCommandAutocomplete } from "./SlashCommandAutocomplete";
+import type { BuiltinSlashCommand } from "../lib/slashCommands";
 import type { ChatInputProps } from "../types";
 
 export function ChatInput({
@@ -120,13 +121,8 @@ export function ChatInput({
     closeSlashCommand,
     navigateSlashCommand,
     confirmSlashCommand,
-    handleSlashCommandSelect,
     setSlashCommandSelectedIndex,
-  } = useSlashCommandAutocomplete({
-    text,
-    setText,
-    textareaRef,
-  });
+  } = useSlashCommandAutocomplete();
   const {
     mentionOpen,
     mentionSelectedIndex,
@@ -164,49 +160,71 @@ export function ChatInput({
   }, []);
 
   useEffect(() => textareaRef.current?.focus(), []);
+  const submitMessage = useCallback(
+    (messageText: string) => {
+      const trimmedText = messageText.trim();
+      if (
+        (trimmedText.length === 0 && attachments.length === 0) ||
+        hasQueuedMessage ||
+        disabled
+      ) {
+        return;
+      }
+
+      // If recording, stop without waiting for final flush and send what's
+      // already transcribed into the textarea. This makes Send a single click
+      // even while the mic is hot; any in-flight audio after the user clicked
+      // Send is intentionally dropped.
+      //
+      // Also handles the edge case where the user clicks Send while a
+      // getUserMedia startup is still pending (isRecording is still false but
+      // a stream is about to be acquired) — stopRecording sets the internal
+      // cancel flag so the pending startup tears itself down instead of
+      // leaving the OS mic indicator on.
+      if (
+        dictation.isRecording ||
+        dictation.isTranscribing ||
+        dictation.isStarting()
+      ) {
+        dictation.stopRecording({ flushPending: false });
+      }
+
+      onSend(
+        trimmedText,
+        selectedPersonaId ?? undefined,
+        attachments.length > 0 ? attachments : undefined,
+      );
+      setText("");
+      clearAttachments();
+      resetTextarea();
+    },
+    [
+      attachments,
+      clearAttachments,
+      dictation,
+      disabled,
+      hasQueuedMessage,
+      onSend,
+      resetTextarea,
+      selectedPersonaId,
+      setText,
+    ],
+  );
+
   const handleSend = useCallback(() => {
     if (!canSend) {
       return;
     }
 
-    // If recording, stop without waiting for final flush and send what's
-    // already transcribed into the textarea. This makes Send a single click
-    // even while the mic is hot; any in-flight audio after the user clicked
-    // Send is intentionally dropped.
-    //
-    // Also handles the edge case where the user clicks Send while a
-    // getUserMedia startup is still pending (isRecording is still false but
-    // a stream is about to be acquired) — stopRecording sets the internal
-    // cancel flag so the pending startup tears itself down instead of
-    // leaving the OS mic indicator on.
-    if (
-      dictation.isRecording ||
-      dictation.isTranscribing ||
-      dictation.isStarting()
-    ) {
-      dictation.stopRecording({ flushPending: false });
-    }
-
-    onSend(
-      text.trim(),
-      selectedPersonaId ?? undefined,
-      attachments.length > 0 ? attachments : undefined,
-    );
-    setText("");
-    clearAttachments();
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
-  }, [
-    attachments,
-    canSend,
-    clearAttachments,
-    dictation,
-    onSend,
-    selectedPersonaId,
-    setText,
-    text,
-  ]);
+    submitMessage(text);
+  }, [canSend, submitMessage, text]);
+  const handleSlashCommandSelect = useCallback(
+    (command: BuiltinSlashCommand) => {
+      closeSlashCommand();
+      submitMessage(command.command);
+    },
+    [closeSlashCommand, submitMessage],
+  );
   const { handleBlur, handleKeyDown, handleInput, handleSelectionChange } =
     useChatInputAutocompleteHandlers({
       mentionOpen,
