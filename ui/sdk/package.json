@@ -31,7 +31,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "npm run generate && npm run build:ts",
+    "build": "pnpm run generate && pnpm run build:ts",
     "build:ts": "tsc",
     "build:native": "tsx scripts/build-native.ts",
     "build:native:all": "tsx scripts/build-native.ts --all",
@@ -54,9 +54,9 @@
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "^0.14.1",
-    "@hey-api/openapi-ts": "^0.92.3",
-    "@types/node": "^20.0.0",
-    "prettier": "^3.8.1",
+    "@hey-api/openapi-ts": "^0.92.4",
+    "@types/node": "^20.19.37",
+    "prettier": "^3.8.3",
     "tsx": "^4.21.0",
     "typescript": "~5.9.3"
   }
