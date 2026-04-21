@@ -1,7 +1,7 @@
 ---
 title: Debug Desktop Startup Failures
 sidebar_label: Debug Desktop Startup Failures
-description: Find the desktop startup diagnostics log, understand the key fields, and share the right artifacts when Goose fails to start.
+description: Find the desktop startup diagnostics log, understand the key fields, and share the right artifacts when goose fails to start.
 ---
 
 When goose Desktop fails before the backend becomes ready, the normal server log may be empty or incomplete. In that case, the most useful artifact is the startup diagnostics JSON written by the desktop app.
@@ -64,7 +64,7 @@ If you want a quick high-level read, focus on these fields:
 - `healthCheckSucceeded`
   Shows whether the desktop app ever observed the backend as ready.
 - `stderrTail`
-  Shows the most recent startup output captured from the backend.
+  Shows the most recent startup output captured from the backend, including major startup stage markers when available.
 - `events`
   Shows the order of major startup steps like process spawn, health check, and child exit.
 

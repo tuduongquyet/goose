@@ -302,6 +302,9 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
   if (externalGoosed?.enabled && externalGoosed.url) {
     const url = externalGoosed.url.replace(/\/$/, '');
     logger.info(`Using external goosed backend at ${url}`);
+    if (startupTrace) {
+      startupTrace.diagnostics.baseUrl = url;
+    }
 
     return {
       baseUrl: url,
@@ -324,6 +327,9 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
     const port = process.env.GOOSE_PORT || '3000';
     const url = `https://127.0.0.1:${port}`;
     logger.info(`Using external goosed backend from env at ${url}`);
+    if (startupTrace) {
+      startupTrace.diagnostics.baseUrl = url;
+    }
 
     return {
       baseUrl: url,

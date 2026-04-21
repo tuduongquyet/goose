@@ -39,20 +39,16 @@ pub async fn run() -> Result<()> {
     #[cfg(feature = "rustls-tls")]
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    boot_marker("logging init start");
+    boot_marker("main entered");
     crate::logging::setup_logging(Some("goosed"))?;
-    boot_marker("logging init done");
 
-    boot_marker("config load start");
     let settings = configuration::Settings::new()?;
-    boot_marker("config load done");
 
     let secret_key = std::env::var("GOOSE_SERVER__SECRET_KEY")
         .unwrap_or_else(|_| hex::encode(rand::random::<[u8; 32]>()));
 
     boot_marker("appstate init start");
     let app_state = state::AppState::new(settings.tls).await?;
-    boot_marker("appstate init done");
 
     // Share the server secret with the tunnel manager so it uses the same
     // key for forwarded requests, without mutating the process environment.
@@ -94,7 +90,6 @@ pub async fn run() -> Result<()> {
                 settings.tls_key_path.as_deref(),
             )
             .await?;
-            boot_marker("tls setup done");
 
             let handle = Handle::new();
             let shutdown_handle = handle.clone();
@@ -129,7 +124,6 @@ pub async fn run() -> Result<()> {
     } else {
         boot_marker("tcp bind start");
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        boot_marker("tcp bind done");
 
         info!("listening on http://{}", addr);
         boot_marker("listening");

@@ -5,7 +5,7 @@ use goose::scheduler_trait::SchedulerTrait;
 use goose::session::SessionManager;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
@@ -13,6 +13,8 @@ use crate::session_event_bus::SessionEventBus;
 use crate::tunnel::TunnelManager;
 use goose::agents::ExtensionLoadResult;
 use goose::gateway::manager::GatewayManager;
+#[cfg(feature = "local-inference")]
+use goose::providers::local_inference::InferenceRuntime;
 
 type ExtensionLoadingTasks =
     Arc<Mutex<HashMap<String, Arc<Mutex<Option<JoinHandle<Vec<ExtensionLoadResult>>>>>>>>;
@@ -25,6 +27,8 @@ pub struct AppState {
     pub tunnel_manager: Arc<TunnelManager>,
     pub gateway_manager: Arc<GatewayManager>,
     pub extension_loading_tasks: ExtensionLoadingTasks,
+    #[cfg(feature = "local-inference")]
+    inference_runtime: Arc<OnceLock<Arc<InferenceRuntime>>>,
     session_buses: Arc<Mutex<HashMap<String, Arc<SessionEventBus>>>>,
 }
 
@@ -43,8 +47,17 @@ impl AppState {
             tunnel_manager,
             gateway_manager,
             extension_loading_tasks: Arc::new(Mutex::new(HashMap::new())),
+            #[cfg(feature = "local-inference")]
+            inference_runtime: Arc::new(OnceLock::new()),
             session_buses: Arc::new(Mutex::new(HashMap::new())),
         }))
+    }
+
+    #[cfg(feature = "local-inference")]
+    pub fn get_inference_runtime(&self) -> Arc<InferenceRuntime> {
+        self.inference_runtime
+            .get_or_init(InferenceRuntime::get_or_init)
+            .clone()
     }
 
     pub async fn set_extension_loading_task(
