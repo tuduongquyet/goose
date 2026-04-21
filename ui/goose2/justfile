@@ -10,9 +10,65 @@ default:
 
 # Install dependencies and build workspace packages
 setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
     cd ../ && pnpm install
     cd ../sdk && pnpm build
     cargo build --manifest-path ../../Cargo.toml -p goose-cli --bin goose
+    SHA=$(git rev-parse HEAD)
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+        SHA="${SHA}-dirty"
+    fi
+    echo "${SHA}" > ../../target/debug/.goose-build-sha
+
+# Check if the goose binary matches the current git state
+check-binary bin_path="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    GOOSE_BIN="{{ bin_path }}"
+    if [[ -z "${GOOSE_BIN}" ]]; then
+        REPO_ROOT=$(cd ../.. && pwd)
+        if [[ -x "${REPO_ROOT}/target/debug/goose" ]]; then
+            GOOSE_BIN="${REPO_ROOT}/target/debug/goose"
+        elif [[ -x "${REPO_ROOT}/target/release/goose" ]]; then
+            GOOSE_BIN="${REPO_ROOT}/target/release/goose"
+        else
+            echo "No local goose binary found; skipping build check"
+            exit 0
+        fi
+    fi
+
+    STAMP_FILE="${GOOSE_BIN%/*}/.goose-build-sha"
+    CURRENT_SHA=$(git rev-parse HEAD)
+    CURRENT_DIRTY=""
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+        CURRENT_DIRTY="-dirty"
+    fi
+
+    if [[ ! -f "${STAMP_FILE}" ]]; then
+        echo "ERROR: no build stamp found — goose binary may be stale"
+        echo "   Run: just goose2 setup"
+        exit 1
+    fi
+
+    BUILD_REF=$(cat "${STAMP_FILE}")
+    BUILD_BASE="${BUILD_REF%-dirty}"
+    BUILD_DIRTY=""
+    [[ "${BUILD_REF}" == *-dirty ]] && BUILD_DIRTY="-dirty"
+
+    if [[ "${BUILD_BASE}" != "${CURRENT_SHA}" ]]; then
+        echo "ERROR: goose binary is from a different commit"
+        echo "   Binary built from: ${BUILD_REF}"
+        echo "   Current HEAD:      ${CURRENT_SHA}${CURRENT_DIRTY}"
+        echo "   Run: just goose2 setup"
+        exit 1
+    elif [[ "${BUILD_DIRTY}" != "${CURRENT_DIRTY}" ]]; then
+        echo "WARNING: goose binary dirty state differs from working tree"
+        echo "   Binary built from: ${BUILD_REF}"
+        echo "   Current HEAD:      ${CURRENT_SHA}${CURRENT_DIRTY}"
+        echo "   Consider running: just goose2 setup"
+    fi
 
 # ── Build & Check ────────────────────────────────────────────
 
@@ -102,6 +158,7 @@ dev:
 
     if [[ -n "${GOOSE_BIN:-}" ]]; then
         echo "Using local goose binary: ${GOOSE_BIN}"
+        just check-binary "${GOOSE_BIN}"
     else
         echo "No local goose binary found under ${REPO_ROOT}/target; falling back to PATH"
     fi
@@ -150,6 +207,7 @@ dev-debug:
 
     if [[ -n "${GOOSE_BIN:-}" ]]; then
         echo "Using local goose binary: ${GOOSE_BIN}"
+        just check-binary "${GOOSE_BIN}"
     else
         echo "No local goose binary found under ${REPO_ROOT}/target; falling back to PATH"
     fi
