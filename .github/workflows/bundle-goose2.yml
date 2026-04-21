@@ -180,9 +180,6 @@ jobs:
           certificate-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       # ── Tauri bundle ──
-      - name: Check disk space before bundle
-        run: df -h
-
       - name: Bundle Goose 2 (pnpm tauri build)
         env:
           APPLE_SIGNING_IDENTITY: ${{ inputs.signing && 'Developer ID Application' || '' }}
