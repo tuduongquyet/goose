@@ -2,6 +2,12 @@ on:
   push:
     tags:
       - "v2.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version string (e.g. 2.0.0-rc.1). Used when testing from a branch."
+        required: true
+        type: string
 
 name: "Release Goose 2"
 
@@ -22,11 +28,15 @@ jobs:
     outputs:
       version: ${{ steps.set-version.outputs.version }}
     steps:
-      - name: Extract version from tag
+      - name: Extract version
         id: set-version
         run: |
-          # Strip the leading "v" from the tag (e.g. v2.0.0 → 2.0.0)
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            # Strip the leading "v" from the tag (e.g. v2.0.0 → 2.0.0)
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Release version: $VERSION"
 
