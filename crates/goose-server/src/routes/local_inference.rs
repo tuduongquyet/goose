@@ -20,7 +20,7 @@ use goose::providers::local_inference::{
         model_id_from_repo, LocalModelEntry, ModelDownloadStatus as RegistryDownloadStatus,
         ModelSettings, ShardFile, FEATURED_MODELS,
     },
-    recommend_local_model,
+    recommend_local_model, InferenceRuntime,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -228,9 +228,9 @@ pub async fn sync_featured_models() -> Result<StatusCode, ErrorResponse> {
     )
 )]
 pub async fn list_local_models(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::State(_state): axum::extract::State<Arc<AppState>>,
 ) -> Result<Json<Vec<LocalModelResponse>>, ErrorResponse> {
-    let recommended_id = recommend_local_model(&state.inference_runtime);
+    let recommended_id = recommend_local_model(&InferenceRuntime::get_or_init());
 
     let registry = get_registry()
         .lock()
@@ -352,7 +352,7 @@ pub async fn search_hf_models(
     )
 )]
 pub async fn get_repo_files(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::State(_state): axum::extract::State<Arc<AppState>>,
     Path((author, repo)): Path<(String, String)>,
 ) -> Result<Json<RepoVariantsResponse>, ErrorResponse> {
     let repo_id = format!("{}/{}", author, repo);
@@ -360,7 +360,7 @@ pub async fn get_repo_files(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to fetch repo files: {}", e)))?;
 
-    let available_memory = available_inference_memory_bytes(&state.inference_runtime);
+    let available_memory = available_inference_memory_bytes(&InferenceRuntime::get_or_init());
     let recommended_index = hf_models::recommend_variant(&variants, available_memory);
 
     let downloaded_quants = {
