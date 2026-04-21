@@ -187,7 +187,6 @@ export interface StartupDiagnostics {
   childExitCode: number | null;
   childExitSignal: string | null;
   stderrTail: string[];
-  stdoutTail: string[];
   events: StartupTraceEvent[];
 }
 
@@ -212,22 +211,6 @@ const appendTail = (target: string[], lines: string[]) => {
   if (target.length > STARTUP_TAIL_LIMIT) {
     target.splice(0, target.length - STARTUP_TAIL_LIMIT);
   }
-};
-
-const summarizeEnv = (env: Record<string, string | undefined>): Record<string, string> => {
-  const summary: Record<string, string> = {};
-
-  for (const [key, value] of Object.entries(env)) {
-    if (value === undefined) {
-      continue;
-    }
-    summary[key] =
-      key.toLowerCase().includes('secret') || key.toLowerCase().includes('key')
-        ? '[REDACTED]'
-        : value;
-  }
-
-  return summary;
 };
 
 const createStartupDiagnostics = (
@@ -258,7 +241,6 @@ const createStartupDiagnostics = (
     childExitCode: null,
     childExitSignal: null,
     stderrTail: [],
-    stdoutTail: [],
     events: [],
   };
 
@@ -320,7 +302,6 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
   if (externalGoosed?.enabled && externalGoosed.url) {
     const url = externalGoosed.url.replace(/\/$/, '');
     logger.info(`Using external goosed backend at ${url}`);
-    startupTrace?.record('external_backend_selected', { url });
 
     return {
       baseUrl: url,
@@ -343,7 +324,6 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
     const port = process.env.GOOSE_PORT || '3000';
     const url = `https://127.0.0.1:${port}`;
     logger.info(`Using external goosed backend from env at ${url}`);
-    startupTrace?.record('external_backend_env_selected', { url });
 
     return {
       baseUrl: url,
@@ -409,10 +389,6 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
     ),
   };
   logger.info('Spawn options:', JSON.stringify(safeSpawnOptions, null, 2));
-  startupTrace?.record('spawn_options_ready', {
-    cwd: workingDir,
-    env: summarizeEnv(spawnEnv),
-  });
 
   const goosedProcess = spawn(spawnCommand, spawnArgs, spawnOptions);
   if (startupTrace) {
@@ -428,11 +404,6 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
     goosedProcess.stdout?.on('data', (data: Buffer) => {
       const text = data.toString();
       logger.info(`goosed stdout for port ${port} and dir ${workingDir}: ${text}`);
-      const lines = text.split('\n').filter((line) => line.trim());
-      appendTail(startupTrace?.diagnostics.stdoutTail ?? [], lines);
-      if (lines.length > 0) {
-        startupTrace?.record('stdout', { lines });
-      }
 
       if (!resolved && text.includes(FINGERPRINT_PREFIX)) {
         for (const line of text.split('\n')) {
@@ -476,9 +447,6 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
     const lines = data.toString().split('\n');
     const nonEmptyLines = lines.filter((line) => line.trim());
     appendTail(startupTrace?.diagnostics.stderrTail ?? [], nonEmptyLines);
-    if (nonEmptyLines.length > 0) {
-      startupTrace?.record('stderr', { lines: nonEmptyLines });
-    }
     for (const line of lines) {
       if (line.trim()) {
         errorLog.push(line);
@@ -492,7 +460,6 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
 
   const stopErrorLogCollection = () => {
     goosedProcess.stderr?.off('data', onStderrData);
-    startupTrace?.record('stderr_collection_stopped');
   };
 
   goosedProcess.on('exit', (code, signal) => {

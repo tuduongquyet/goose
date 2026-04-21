@@ -718,7 +718,6 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     const diagnostics = getStartupDiagnostics();
     const stderrTail = diagnostics?.stderrTail ?? [];
     const failureDetailParts = [
-      errorLog.join('\n'),
       diagnostics?.childExitCode !== null || diagnostics?.childExitSignal
         ? `Child exit: code=${diagnostics?.childExitCode ?? 'null'} signal=${diagnostics?.childExitSignal ?? 'null'}`
         : 'Child exit: unavailable',
@@ -729,6 +728,7 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
         ? 'Health check observed: yes'
         : 'Health check observed: no',
       startupDiagnosticsPath ? `Startup diagnostics: ${startupDiagnosticsPath}` : '',
+      errorLog.length > 0 ? `Startup errors:\n${errorLog.join('\n')}` : '',
       stderrTail.length > 0 ? `Captured startup stderr:\n${stderrTail.join('\n')}` : '',
     ].filter(Boolean);
 
@@ -753,11 +753,6 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
         return createChat(app, { initialMessage, dir });
       }
     } else {
-      recordStartupEvent('startup_failure_dialog_shown', {
-        childStillRunning: Boolean(
-          goosedProcess && goosedProcess.exitCode === null && !goosedProcess.killed
-        ),
-      });
       dialog.showMessageBoxSync({
         type: 'error',
         title: 'Goose Failed to Start',
@@ -768,7 +763,6 @@ const createChat = async (app: App, options: CreateChatOptions = {}) => {
     }
     app.quit();
   }
-  recordStartupEvent('startup_ready');
 
   // errorLog is only needed during startup to detect fatal errors.
   // Stop collecting stderr to avoid unbounded memory growth over long sessions.
