@@ -12,52 +12,11 @@ pub mod todo;
 pub mod tom;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use crate::agents::mcp_client::McpClientTrait;
 use crate::session::Session;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
-
-#[derive(Debug, Clone)]
-pub struct Source {
-    pub name: String,
-    pub kind: SourceKind,
-    pub description: String,
-    pub path: PathBuf,
-    pub content: String,
-    pub supporting_files: Vec<PathBuf>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SourceKind {
-    Subrecipe,
-    Recipe,
-    Skill,
-    Agent,
-    BuiltinSkill,
-}
-
-impl std::fmt::Display for SourceKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SourceKind::Subrecipe => write!(f, "subrecipe"),
-            SourceKind::Recipe => write!(f, "recipe"),
-            SourceKind::Skill => write!(f, "skill"),
-            SourceKind::Agent => write!(f, "agent"),
-            SourceKind::BuiltinSkill => write!(f, "builtin skill"),
-        }
-    }
-}
-
-impl Source {
-    pub fn to_load_text(&self) -> String {
-        format!(
-            "## {} ({})\n\n{}\n\n### Content\n\n{}",
-            self.name, self.kind, self.description, self.content
-        )
-    }
-}
 
 pub fn parse_frontmatter<T: for<'de> Deserialize<'de>>(
     content: &str,

@@ -297,15 +297,33 @@ pub struct ProviderConfigKey {
 }
 
 /// The type of source entity.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum SourceType {
     #[default]
     Skill,
+    BuiltinSkill,
+    Recipe,
+    Subrecipe,
+    Agent,
 }
 
-/// A source — a user-editable entity backed by an on-disk directory. Sources
-/// may be either `global` (shared across all projects) or project-specific.
+impl std::fmt::Display for SourceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SourceType::Skill => write!(f, "skill"),
+            SourceType::BuiltinSkill => write!(f, "builtin skill"),
+            SourceType::Recipe => write!(f, "recipe"),
+            SourceType::Subrecipe => write!(f, "subrecipe"),
+            SourceType::Agent => write!(f, "agent"),
+        }
+    }
+}
+
+/// A source — a user-editable entity backed by an on-disk path. Sources may
+/// be either `global` (shared across all projects) or project-specific.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceEntry {
@@ -314,11 +332,28 @@ pub struct SourceEntry {
     pub name: String,
     pub description: String,
     pub content: String,
-    /// Absolute path to the source's directory on disk.
+    /// Absolute path to the source on disk. A directory for skills, a file for
+    /// recipes and agents.
     pub directory: String,
     /// True when the source lives in the user's global sources directory; false
     /// when it lives inside a specific project.
     pub global: bool,
+    /// Paths (absolute) of additional files that live alongside the source.
+    /// Only skills currently populate this; empty for other source types.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supporting_files: Vec<String>,
+}
+
+impl SourceEntry {
+    /// Render this source as a markdown block suitable for injecting into an
+    /// LLM context. Used by the skills and summon runtimes when loading a
+    /// source into the current conversation.
+    pub fn to_load_text(&self) -> String {
+        format!(
+            "## {} ({})\n\n{}\n\n### Content\n\n{}",
+            self.name, self.source_type, self.description, self.content
+        )
+    }
 }
 
 /// Create a new source (global or project-scoped).

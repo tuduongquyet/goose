@@ -3,10 +3,8 @@
 //! directory — `~/.agents/skills` for global sources and `<project>/.goose/skills`
 //! for project-specific sources.
 
-use crate::agents::platform_extensions::{parse_frontmatter, Source, SourceKind};
-use crate::skills::{
-    discover_skills_with_scope, global_skills_dir, project_skills_dir, SkillFrontmatter,
-};
+use crate::agents::platform_extensions::parse_frontmatter;
+use crate::skills::{discover_skills, global_skills_dir, project_skills_dir, SkillFrontmatter};
 use fs_err as fs;
 use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use sacp::Error;
@@ -42,6 +40,8 @@ fn source_base_dir(
                 skills_dir_project_or_err(pd)
             }
         }
+        other => Err(Error::invalid_params()
+            .data(format!("Source type '{}' is not user-editable", other))),
     }
 }
 
@@ -111,26 +111,8 @@ fn source_entry(
         content: content.to_string(),
         directory: dir.to_string_lossy().to_string(),
         global,
+        supporting_files: Vec::new(),
     }
-}
-
-fn source_type_for(kind: SourceKind) -> Option<SourceType> {
-    match kind {
-        SourceKind::Skill => Some(SourceType::Skill),
-        _ => None,
-    }
-}
-
-fn to_source_entry(source: &Source, global: bool) -> Option<SourceEntry> {
-    let source_type = source_type_for(source.kind)?;
-    Some(source_entry(
-        source_type,
-        &source.name,
-        &source.description,
-        &source.content,
-        &source.path,
-        global,
-    ))
 }
 
 pub fn create_source(
@@ -219,24 +201,20 @@ pub fn list_sources(
     source_type: Option<SourceType>,
     project_dir: Option<&str>,
 ) -> Result<Vec<SourceEntry>, Error> {
-    let type_filter = source_type;
-
     let working_dir = project_dir
         .map(str::trim)
         .filter(|p| !p.is_empty())
         .map(PathBuf::from);
 
-    let mut sources: Vec<SourceEntry> = discover_skills_with_scope(working_dir.as_deref())
-        .iter()
-        .filter_map(|(s, global)| {
-            let entry = to_source_entry(s, *global)?;
-            if let Some(t) = type_filter {
-                if entry.source_type != t {
-                    return None;
-                }
-            }
-            Some(entry)
-        })
+    // Today only SourceType::Skill flows through sources CRUD; built-in skills
+    // and summon-owned source types (recipes, agents, subrecipes) are excluded.
+    if matches!(source_type, Some(t) if t != SourceType::Skill) {
+        return Ok(Vec::new());
+    }
+
+    let mut sources: Vec<SourceEntry> = discover_skills(working_dir.as_deref())
+        .into_iter()
+        .filter(|s| s.source_type == SourceType::Skill)
         .collect();
 
     sources.sort_by(|a, b| a.name.cmp(&b.name));
@@ -263,6 +241,10 @@ pub fn export_source(
 
     let type_slug = match source_type {
         SourceType::Skill => "skill",
+        other => {
+            return Err(Error::invalid_params()
+                .data(format!("Source type '{}' cannot be exported", other)))
+        }
     };
     let export = serde_json::json!({
         "version": 1,

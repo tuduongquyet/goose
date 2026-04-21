@@ -1,14 +1,14 @@
 use super::discover_skills;
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
-use crate::agents::platform_extensions::{Source, SourceKind};
 use crate::agents::ToolCallContext;
 use async_trait::async_trait;
+use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, Content, Implementation, InitializeResult, JsonObject, ListToolsResult,
     ServerCapabilities, ServerNotification, Tool,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -30,11 +30,14 @@ impl SkillsClient {
         let mut instructions = String::new();
         if context.session.is_some() {
             let sources = discover_skills(Some(&working_dir));
-            let mut skills: Vec<&Source> = sources
+            let mut skills: Vec<&SourceEntry> = sources
                 .iter()
-                .filter(|s| s.kind == SourceKind::Skill || s.kind == SourceKind::BuiltinSkill)
+                .filter(|s| {
+                    s.source_type == SourceType::Skill
+                        || s.source_type == SourceType::BuiltinSkill
+                })
                 .collect();
-            skills.sort_by(|a, b| (&a.name, &a.path).cmp(&(&b.name, &b.path)));
+            skills.sort_by(|a, b| (&a.name, &a.directory).cmp(&(&b.name, &b.directory)));
 
             if !skills.is_empty() {
                 instructions.push_str(
@@ -124,17 +127,18 @@ impl McpClientTrait for SkillsClient {
             let mut output = format!(
                 "# Loaded Skill: {} ({})\n\n{}\n",
                 skill.name,
-                skill.kind,
+                skill.source_type,
                 skill.to_load_text()
             );
 
             if !skill.supporting_files.is_empty() {
+                let skill_dir = Path::new(&skill.directory);
                 output.push_str(&format!(
                     "\n## Supporting Files\n\nSkill directory: {}\n\n",
-                    skill.path.display()
+                    skill.directory
                 ));
                 for file in &skill.supporting_files {
-                    if let Ok(relative) = file.strip_prefix(&skill.path) {
+                    if let Ok(relative) = Path::new(file).strip_prefix(skill_dir) {
                         let rel_str = relative.to_string_lossy().replace('\\', "/");
                         output.push_str(&format!(
                             "- {} → load_skill(name: \"{}/{}\")\n",
@@ -152,22 +156,25 @@ impl McpClientTrait for SkillsClient {
             let relative_path = raw_relative_path.replace('\\', "/");
             if let Some(skill) = skills.iter().find(|s| {
                 s.name == parent_skill_name
-                    && matches!(s.kind, SourceKind::Skill | SourceKind::BuiltinSkill)
+                    && matches!(
+                        s.source_type,
+                        SourceType::Skill | SourceType::BuiltinSkill
+                    )
             }) {
-                let canonical_skill_dir = skill
-                    .path
-                    .canonicalize()
-                    .unwrap_or_else(|_| skill.path.clone());
+                let skill_dir = PathBuf::from(&skill.directory);
+                let canonical_skill_dir =
+                    skill_dir.canonicalize().unwrap_or_else(|_| skill_dir.clone());
 
                 for file_path in &skill.supporting_files {
-                    let Ok(rel) = file_path.strip_prefix(&skill.path) else {
+                    let file_path_buf = Path::new(file_path);
+                    let Ok(rel) = file_path_buf.strip_prefix(&skill_dir) else {
                         continue;
                     };
                     if rel.to_string_lossy().replace('\\', "/") != relative_path {
                         continue;
                     }
 
-                    return Ok(match file_path.canonicalize() {
+                    return Ok(match file_path_buf.canonicalize() {
                         Ok(canonical) if canonical.starts_with(&canonical_skill_dir) => {
                             match std::fs::read_to_string(&canonical) {
                                 Ok(content) => {
@@ -197,7 +204,8 @@ impl McpClientTrait for SkillsClient {
                     .supporting_files
                     .iter()
                     .filter_map(|f| {
-                        f.strip_prefix(&skill.path)
+                        Path::new(f)
+                            .strip_prefix(&skill_dir)
                             .ok()
                             .map(|r| r.to_string_lossy().replace('\\', "/"))
                     })

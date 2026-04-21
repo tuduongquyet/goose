@@ -7,8 +7,9 @@ pub mod client;
 
 pub use client::{SkillsClient, EXTENSION_NAME};
 
-use crate::agents::platform_extensions::{parse_frontmatter, Source, SourceKind};
+use crate::agents::platform_extensions::parse_frontmatter;
 use crate::config::paths::Paths;
+use goose_sdk::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -61,7 +62,7 @@ pub fn all_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
     dirs
 }
 
-fn parse_skill_content(content: &str, path: PathBuf) -> Option<Source> {
+fn parse_skill_content(content: &str, path: &Path, global: bool) -> Option<SourceEntry> {
     let (metadata, body): (SkillFrontmatter, String) = match parse_frontmatter(content) {
         Ok(Some(parsed)) => parsed,
         Ok(None) => return None,
@@ -78,12 +79,13 @@ fn parse_skill_content(content: &str, path: PathBuf) -> Option<Source> {
         return None;
     }
 
-    Some(Source {
+    Some(SourceEntry {
+        source_type: SourceType::Skill,
         name,
-        kind: SourceKind::Skill,
         description: metadata.description,
-        path,
         content: body,
+        directory: path.to_string_lossy().into_owned(),
+        global,
         supporting_files: Vec::new(),
     })
 }
@@ -130,7 +132,11 @@ fn walk_files_recursively<F, G>(
     }
 }
 
-fn scan_skills_from_dir(dir: &Path, seen: &mut HashSet<String>) -> Vec<Source> {
+fn scan_skills_from_dir(
+    dir: &Path,
+    global: bool,
+    seen: &mut HashSet<String>,
+) -> Vec<SourceEntry> {
     let mut skill_files = Vec::new();
     let mut visited_dirs = HashSet::new();
 
@@ -158,7 +164,7 @@ fn scan_skills_from_dir(dir: &Path, seen: &mut HashSet<String>) -> Vec<Source> {
             }
         };
 
-        if let Some(mut source) = parse_skill_content(&content, skill_dir.to_path_buf()) {
+        if let Some(mut source) = parse_skill_content(&content, skill_dir, global) {
             if !seen.contains(&source.name) {
                 let mut files = Vec::new();
                 let mut visited_support_dirs = HashSet::new();
@@ -168,7 +174,7 @@ fn scan_skills_from_dir(dir: &Path, seen: &mut HashSet<String>) -> Vec<Source> {
                     &mut |path| !should_skip_dir(path) && !path.join("SKILL.md").is_file(),
                     &mut |path| {
                         if path.file_name().and_then(|n| n.to_str()) != Some("SKILL.md") {
-                            files.push(path.to_path_buf());
+                            files.push(path.to_string_lossy().into_owned());
                         }
                     },
                 );
@@ -182,37 +188,27 @@ fn scan_skills_from_dir(dir: &Path, seen: &mut HashSet<String>) -> Vec<Source> {
     sources
 }
 
-pub fn discover_skills(working_dir: Option<&Path>) -> Vec<Source> {
-    discover_skills_with_scope(working_dir)
-        .into_iter()
-        .map(|(source, _)| source)
-        .collect()
-}
-
-/// Discover skills and pair each with whether the directory it was found in is
-/// a global (home-rooted) location. Built-in skills are reported with
-/// `global = true`.
-pub fn discover_skills_with_scope(working_dir: Option<&Path>) -> Vec<(Source, bool)> {
-    let mut sources: Vec<(Source, bool)> = Vec::new();
+/// Discover skills from all configured filesystem locations and built-ins.
+/// Each returned entry has `global` set according to the directory it was
+/// found in (or `true` for built-ins).
+pub fn discover_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
+    let mut sources: Vec<SourceEntry> = Vec::new();
     let mut seen = HashSet::new();
 
     for (dir, is_global) in all_skill_dirs(working_dir) {
-        for source in scan_skills_from_dir(&dir, &mut seen) {
-            sources.push((source, is_global));
+        for source in scan_skills_from_dir(&dir, is_global, &mut seen) {
+            sources.push(source);
         }
     }
 
     for content in builtin::get_all() {
-        if let Some(source) = parse_skill_content(content, PathBuf::new()) {
+        if let Some(source) = parse_skill_content(content, &PathBuf::new(), true) {
             if !seen.contains(&source.name) {
                 seen.insert(source.name.clone());
-                sources.push((
-                    Source {
-                        kind: SourceKind::BuiltinSkill,
-                        ..source
-                    },
-                    true,
-                ));
+                sources.push(SourceEntry {
+                    source_type: SourceType::BuiltinSkill,
+                    ..source
+                });
             }
         }
     }
@@ -220,7 +216,7 @@ pub fn discover_skills_with_scope(working_dir: Option<&Path>) -> Vec<(Source, bo
     sources
 }
 
-pub fn list_installed_skills(working_dir: Option<&Path>) -> Vec<Source> {
+pub fn list_installed_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
     let fallback;
     let wd = match working_dir {
         Some(p) => Some(p),
