@@ -6,6 +6,11 @@ import { createServer } from 'net';
 import { Buffer } from 'node:buffer';
 import { status } from './api';
 import { Client, createClient, createConfig } from './api/client';
+import {
+  appendTail,
+  createStartupDiagnostics,
+  type StartupDiagnostics,
+} from './startupDiagnostics';
 
 export interface Logger {
   info: (...args: unknown[]) => void;
@@ -168,28 +173,6 @@ export interface StartGoosedOptions {
   diagnosticsDir?: string;
 }
 
-export interface StartupTraceEvent {
-  name: string;
-  at: string;
-  elapsedMs: number;
-  details?: Record<string, unknown>;
-}
-
-export interface StartupDiagnostics {
-  attemptId: string;
-  startedAt: string;
-  goosedPath: string | null;
-  workingDir: string;
-  baseUrl: string | null;
-  pid: number | null;
-  certFingerprintSeen: boolean;
-  healthCheckSucceeded: boolean;
-  childExitCode: number | null;
-  childExitSignal: string | null;
-  stderrTail: string[];
-  events: StartupTraceEvent[];
-}
-
 export interface GoosedResult {
   baseUrl: string;
   workingDir: string;
@@ -203,73 +186,6 @@ export interface GoosedResult {
   getStartupDiagnostics: () => StartupDiagnostics | null;
   recordStartupEvent: (name: string, details?: Record<string, unknown>) => void;
 }
-
-const STARTUP_TAIL_LIMIT = 40;
-
-const appendTail = (target: string[], lines: string[]) => {
-  target.push(...lines.filter((line) => line.trim()));
-  if (target.length > STARTUP_TAIL_LIMIT) {
-    target.splice(0, target.length - STARTUP_TAIL_LIMIT);
-  }
-};
-
-const createStartupDiagnostics = (
-  diagnosticsDir: string | undefined,
-  workingDir: string,
-  goosedPath: string | null,
-  baseUrl: string | null
-) => {
-  if (!diagnosticsDir) {
-    return null;
-  }
-
-  fs.mkdirSync(diagnosticsDir, { recursive: true });
-  const startedAt = new Date();
-  const attemptId = `goosed-startup-${startedAt.toISOString().replace(/:/g, '-')}-${process.pid}.json`;
-  const diagnosticsPath = path.join(diagnosticsDir, attemptId);
-  const monotonicStart = Date.now();
-
-  const diagnostics: StartupDiagnostics = {
-    attemptId,
-    startedAt: startedAt.toISOString(),
-    goosedPath,
-    workingDir,
-    baseUrl,
-    pid: null,
-    certFingerprintSeen: false,
-    healthCheckSucceeded: false,
-    childExitCode: null,
-    childExitSignal: null,
-    stderrTail: [],
-    events: [],
-  };
-
-  const flush = () => {
-    fs.writeFileSync(diagnosticsPath, `${JSON.stringify(diagnostics, null, 2)}\n`);
-  };
-
-  const record = (name: string, details?: Record<string, unknown>) => {
-    if (name === 'healthcheck_success') {
-      diagnostics.healthCheckSucceeded = true;
-    }
-    diagnostics.events.push({
-      name,
-      at: new Date().toISOString(),
-      elapsedMs: Date.now() - monotonicStart,
-      ...(details ? { details } : {}),
-    });
-    flush();
-  };
-
-  flush();
-
-  return {
-    diagnosticsPath,
-    diagnostics,
-    record,
-    flush,
-  };
-};
 
 const goosedClientForUrlAndSecret = (url: string, secret: string): Client => {
   return createClient(
