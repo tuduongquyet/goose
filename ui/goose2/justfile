@@ -16,12 +16,15 @@ setup:
     cd sdk && pnpm build
     cargo build --manifest-path ../../Cargo.toml -p goose-cli --bin goose
     SHA=$(git rev-parse HEAD)
-    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    BACKEND_PATHS="crates/goose-cli crates/goose crates/goose-acp crates/goose-acp-macros crates/goose-mcp crates/goose-server Cargo.toml Cargo.lock vendor"
+    if [[ -n "$(git status --porcelain -- $BACKEND_PATHS 2>/dev/null)" ]]; then
         SHA="${SHA}-dirty"
     fi
     echo "${SHA}" > ../../target/debug/.goose-build-sha
 
-# Check if the goose binary matches the current git state
+# Check if the goose binary matches the current git state.
+# Only flags staleness when paths that affect the binary have changed.
+# NOTE: if you add a new crate dependency to goose-cli, add its path here.
 check-binary bin_path="":
     #!/usr/bin/env bash
     set -euo pipefail
@@ -39,10 +42,13 @@ check-binary bin_path="":
         fi
     fi
 
+    # Paths that affect the goose binary — used to filter git diff/status.
+    BACKEND_PATHS="crates/goose-cli crates/goose crates/goose-acp crates/goose-acp-macros crates/goose-mcp crates/goose-server Cargo.toml Cargo.lock vendor"
+
     STAMP_FILE="${GOOSE_BIN%/*}/.goose-build-sha"
     CURRENT_SHA=$(git rev-parse HEAD)
     CURRENT_DIRTY=""
-    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    if [[ -n "$(git status --porcelain -- $BACKEND_PATHS 2>/dev/null)" ]]; then
         CURRENT_DIRTY="-dirty"
     fi
 
@@ -58,11 +64,24 @@ check-binary bin_path="":
     [[ "${BUILD_REF}" == *-dirty ]] && BUILD_DIRTY="-dirty"
 
     if [[ "${BUILD_BASE}" != "${CURRENT_SHA}" ]]; then
-        echo "ERROR: goose binary is from a different commit"
-        echo "   Binary built from: ${BUILD_REF}"
-        echo "   Current HEAD:      ${CURRENT_SHA}${CURRENT_DIRTY}"
-        echo "   Run: just goose2 setup"
-        exit 1
+        # SHAs differ — check whether any backend-relevant paths changed.
+        if ! RELEVANT_CHANGES=$(git diff --name-only "${BUILD_BASE}" "${CURRENT_SHA}" -- $BACKEND_PATHS 2>/dev/null); then
+            # Build SHA is no longer reachable (e.g. after rebase/force-push).
+            echo "ERROR: goose binary build SHA is no longer in history — binary may be stale"
+            echo "   Binary built from: ${BUILD_REF}"
+            echo "   Current HEAD:      ${CURRENT_SHA}${CURRENT_DIRTY}"
+            echo "   Run: just goose2 setup"
+            exit 1
+        fi
+        if [[ -n "${RELEVANT_CHANGES}" ]]; then
+            echo "ERROR: goose binary is stale — backend code changed since last build"
+            echo "   Binary built from: ${BUILD_REF}"
+            echo "   Current HEAD:      ${CURRENT_SHA}${CURRENT_DIRTY}"
+            echo "   Changed paths:"
+            echo "${RELEVANT_CHANGES}" | sed 's/^/      /'
+            echo "   Run: just goose2 setup"
+            exit 1
+        fi
     elif [[ "${BUILD_DIRTY}" != "${CURRENT_DIRTY}" ]]; then
         echo "WARNING: goose binary dirty state differs from working tree"
         echo "   Binary built from: ${BUILD_REF}"
