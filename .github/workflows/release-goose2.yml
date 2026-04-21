@@ -2,6 +2,9 @@ on:
   push:
     tags:
       - "v2.*"
+  pull_request: # temporary — remove before merge
+    paths:
+      - ".github/workflows/release-goose2.yml"
   workflow_dispatch:
     inputs:
       version:
