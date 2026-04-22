@@ -217,12 +217,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
           metadata: { userVisible: true, agentVisible: true },
         });
       } else {
-        const last = existing.content[existing.content.length - 1];
-        if (last?.type === "text" && !ann) {
-          (last as { type: "text"; text: string }).text += update.content.text;
-        } else {
-          existing.content.push(textBlock);
-        }
+        existing.content.push(textBlock);
       }
       break;
     }
