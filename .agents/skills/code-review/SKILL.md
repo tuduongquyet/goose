@@ -121,7 +121,7 @@ Avoid `just check-everything` as the baseline in this repo: that recipe runs `ca
 ```bash
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
-cd ui/desktop && pnpm run lint:check
+(cd ui/desktop && pnpm run lint:check)
 ./scripts/check-openapi-schema.sh
 ```
 
