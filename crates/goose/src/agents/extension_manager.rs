@@ -863,6 +863,25 @@ impl ExtensionManager {
         Ok(())
     }
 
+    pub async fn close_all_clients(&self) {
+        let clients: Vec<(String, McpClientBox)> = {
+            let extensions = self.extensions.lock().await;
+            extensions
+                .iter()
+                .map(|(name, ext)| (name.clone(), ext.get_client()))
+                .collect()
+        };
+
+        for (name, client) in clients {
+            if let Err(e) = client.as_ref().close().await {
+                tracing::warn!(extension = %name, error = %e, "failed to close extension client");
+            }
+        }
+
+        self.extensions.lock().await.clear();
+        self.invalidate_tools_cache_and_bump_version().await;
+    }
+
     pub async fn update_working_dir(&self, new_dir: &std::path::Path) {
         let extensions = self.extensions.lock().await;
         for (name, ext) in extensions.iter() {

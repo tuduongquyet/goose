@@ -15,8 +15,10 @@ use std::sync::Arc;
 
 use crate::agents::extension_manager::ExtensionManager;
 use crate::agents::tool_execution::ToolCallContext;
+use crate::config::{Config, ConfigError};
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::Conversation;
+use crate::model::ModelConfig;
 use crate::providers::base::Provider;
 use rmcp::model::Tool;
 use tokio_util::sync::CancellationToken;
@@ -74,18 +76,23 @@ Rules:
 - User preferences and corrections are highest priority — they prevent repeating mistakes
 - Do NOT save: task progress, session outcomes, temporary state
 - Do NOT save things that are obvious or trivially re-discoverable
+- Do NOT save placeholders, guesses, or unknowns (for example: "Name: ?", "OS unknown")
 - Do NOT duplicate — if a fact is already in memory, skip it
-- If nothing is worth saving, just say so and stop.
+- If nothing is worth saving, reply exactly: Nothing to save.
 
-Make your memory tool calls now."#;
+If you are saving anything, use memory tool calls only. Do not describe the save in prose."#;
 
 const SKILL_REVIEW_PROMPT: &str = r#"Review the conversation above and consider saving or updating a skill if appropriate.
 
 Focus on: was a non-trivial approach used to complete a task that required trial and error, or changing course due to experiential findings along the way, or did the user expect or desire a different method or outcome?
 
+Failure-driven learning counts. If repeated tool errors, retries, corrected parameters, or a recovered workflow exposed a reusable fix, save that fix as a skill even if the overall task failed.
+
 If a relevant skill already exists, update it with what you learned.
 Otherwise, create a new skill if the approach is reusable.
-If nothing is worth saving, just say "Nothing to save." and stop."#;
+When creating a skill, call create_skill directly with concise valid SKILL.md content.
+Do not draft the skill in prose before calling the tool.
+If nothing is worth saving, reply exactly: Nothing to save."#;
 
 const COMBINED_REVIEW_PROMPT: &str = r#"Review the conversation above and consider two things:
 
@@ -94,16 +101,48 @@ const COMBINED_REVIEW_PROMPT: &str = r#"Review the conversation above and consid
 - Target "memory": environment facts — OS, tools, project structure, build commands, API quirks, lessons learned
 - Priority: user preferences and corrections > environment facts > procedural knowledge
 - One fact per entry, keep concise. Do NOT duplicate facts already in memory.
+- Save only high-confidence facts supported by the conversation.
+- Do NOT save placeholders, guesses, or unknowns (for example: "Name: ?", "OS unknown").
 
 **Skills** — save reusable approaches using create_skill or patch_skill:
 - Was a non-trivial approach used? (trial and error, error recovery, multi-step workflow)
 - Did the user correct or improve the approach? Save the corrected version.
 - If a relevant skill already exists, patch it. Otherwise create a new one.
+- Failure-driven learning counts. If retries, invalid arguments, recoverable errors, or a corrected procedure exposed a reusable fix, save that fix as a skill even if the overall task failed.
+- When saving a skill, call create_skill or patch_skill directly. Do not draft the skill in prose first.
+- Keep skill content minimal and valid: YAML frontmatter plus only the essential reusable steps.
 
-Only act if there's something genuinely worth saving.
-If nothing stands out, just say "Nothing to save." and stop."#;
+Output rules:
+- If saving anything, emit tool calls only. Do not narrate, summarize, or say "Memory updated".
+- If not saving anything, reply exactly: Nothing to save."#;
 
 const FLUSH_PROMPT: &str = "[System: The session context is being compressed. Save anything worth remembering permanently — prioritize user preferences, corrections, environment facts, and recurring patterns over task-specific details. This is your last chance before earlier conversation turns are summarized away.]";
+
+fn normalize_skill_review_iterations(iterations: u32) -> u32 {
+    if iterations == 0 {
+        warn!(
+            "Ignoring GOOSE_SKILL_REVIEW_ITERATIONS=0; using default {}",
+            DEFAULT_SKILL_REVIEW_ITERATIONS
+        );
+        DEFAULT_SKILL_REVIEW_ITERATIONS
+    } else {
+        iterations
+    }
+}
+
+pub fn resolve_skill_review_iterations() -> u32 {
+    match Config::global().get_param::<u32>("GOOSE_SKILL_REVIEW_ITERATIONS") {
+        Ok(iterations) => normalize_skill_review_iterations(iterations),
+        Err(ConfigError::NotFound(_)) => DEFAULT_SKILL_REVIEW_ITERATIONS,
+        Err(e) => {
+            warn!(
+                "Invalid GOOSE_SKILL_REVIEW_ITERATIONS value ({}); using default {}",
+                e, DEFAULT_SKILL_REVIEW_ITERATIONS
+            );
+            DEFAULT_SKILL_REVIEW_ITERATIONS
+        }
+    }
+}
 
 /// Spawn a background task to review the conversation for memory and/or skill saves.
 ///
@@ -118,7 +157,7 @@ pub fn spawn_background_review(
     working_dir: std::path::PathBuf,
     review_memory: bool,
     review_skills: bool,
-) {
+) -> tokio::task::JoinHandle<()> {
     let base_prompt = if review_memory && review_skills {
         COMBINED_REVIEW_PROMPT
     } else if review_skills {
@@ -165,7 +204,7 @@ pub fn spawn_background_review(
         {
             warn!("Background {} failed: {}", task_name, e);
         }
-    });
+    })
 }
 
 /// Query recent past sessions for recurring patterns to feed into the review.
@@ -278,19 +317,26 @@ async fn run_knowledge_extraction(
     let system_prompt =
         "You are reviewing a conversation to extract durable knowledge. \
          You have access to memory and/or skill tools. Use them now.\n\n\
+         You are in save-or-stop mode. Your only valid outputs are:\n\
+         1. tool calls to memory/create_skill/patch_skill/load_skill\n\
+         2. exactly the text: Nothing to save.\n\
+         Do not narrate, summarize, or claim a save happened in prose.\n\
+         Do not draft candidate skill content in prose before calling create_skill.\n\n\
          MEMORY — two targets:\n\
          - 'user': who the user is — name, role, preferences, communication style, pet peeves, corrections\n\
          - 'memory': your notes — environment facts, project conventions, tool quirks, lessons learned\n\
          The most valuable memory prevents the user from having to repeat themselves.\n\
          Priority: user preferences and corrections > environment facts > procedural knowledge.\n\n\
          SKILLS — save when a non-trivial approach was used (trial and error, error recovery, multi-step).\n\
-         If nothing is genuinely worth saving, say so and stop.";
+         Reusable fixes discovered through failure still count as worth saving.\n\
+         If nothing is genuinely worth saving, reply exactly: Nothing to save.";
 
     let mut tool_calls_made = 0;
 
-    // Use the main model for reviews — the judgment about what's worth saving
-    // is nuanced and benefits from the same model quality as the main conversation.
-    let model_config = provider.get_model_config();
+    // Reviews use the main model by default. Skill-bearing reviews can override
+    // just the model name via GOOSE_SKILL_MODEL without changing the session's
+    // visible task model or provider.
+    let model_config = resolve_review_model_config(provider, &scope)?;
 
     loop {
         if tool_calls_made >= MAX_REVIEW_TOOL_CALLS {
@@ -510,6 +556,47 @@ async fn adversary_review_skill(
     }
 }
 
+fn resolve_review_model_config(
+    provider: &dyn Provider,
+    scope: &ReviewScope,
+) -> anyhow::Result<ModelConfig> {
+    let base_model_config = provider.get_model_config();
+    if !scope.include_skill_tools {
+        return Ok(base_model_config);
+    }
+
+    let config = Config::global();
+    let skill_model = match config.get_param::<String>("GOOSE_SKILL_MODEL") {
+        Ok(model) => model,
+        Err(ConfigError::NotFound(_)) => return Ok(base_model_config),
+        Err(e) => {
+            anyhow::bail!("Failed to load GOOSE_SKILL_MODEL: {}", e);
+        }
+    };
+
+    let mut model_config =
+        ModelConfig::new(&skill_model)?.with_canonical_limits(provider.get_name());
+    model_config.temperature = base_model_config.temperature.or(model_config.temperature);
+    model_config.max_tokens = base_model_config.max_tokens.or(model_config.max_tokens);
+    model_config.toolshim = base_model_config.toolshim;
+    model_config.toolshim_model = base_model_config
+        .toolshim_model
+        .clone()
+        .or(model_config.toolshim_model);
+    model_config.request_params = model_config
+        .request_params
+        .or(base_model_config.request_params.clone());
+    model_config.reasoning = model_config.reasoning.or(base_model_config.reasoning);
+
+    match config.get_param::<usize>("GOOSE_SKILL_CONTEXT_LIMIT") {
+        Ok(limit) => model_config.context_limit = Some(limit),
+        Err(ConfigError::NotFound(_)) => {}
+        Err(e) => anyhow::bail!("Failed to load GOOSE_SKILL_CONTEXT_LIMIT: {}", e),
+    }
+
+    Ok(model_config)
+}
+
 /// Roll back a blocked skill write. For newly created skills (`create_skill`), the
 /// entire skill directory is removed. For `patch_skill`, only the patched
 /// `SKILL.md` is reverted to its pre-patch content so pre-existing supporting
@@ -559,6 +646,10 @@ fn filter_review_tools(all_tools: Vec<Tool>, scope: &ReviewScope) -> Vec<Tool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::ModelConfig;
+    use crate::providers::base::MessageStream;
+    use crate::providers::errors::ProviderError;
+    use async_trait::async_trait;
     use rmcp::model::Tool;
 
     fn make_tool(name: &str) -> Tool {
@@ -720,7 +811,87 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_skill_review_iterations_zero_falls_back_to_default() {
+        assert_eq!(
+            normalize_skill_review_iterations(0),
+            DEFAULT_SKILL_REVIEW_ITERATIONS
+        );
+    }
+
+    #[test]
+    fn test_normalize_skill_review_iterations_preserves_nonzero_value() {
+        assert_eq!(normalize_skill_review_iterations(3), 3);
+    }
+
+    #[test]
     fn test_max_review_tool_calls_limit() {
         assert_eq!(MAX_REVIEW_TOOL_CALLS, 8);
+    }
+
+    #[derive(Debug)]
+    struct StaticProvider {
+        name: &'static str,
+        model_config: ModelConfig,
+    }
+
+    #[async_trait]
+    impl Provider for StaticProvider {
+        fn get_name(&self) -> &str {
+            self.name
+        }
+
+        fn get_model_config(&self) -> ModelConfig {
+            self.model_config.clone()
+        }
+
+        async fn stream(
+            &self,
+            _: &ModelConfig,
+            _: &str,
+            _: &str,
+            _: &[Message],
+            _: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn test_resolve_review_model_config_uses_base_model_without_skill_override() {
+        let _guard = env_lock::lock_env([
+            ("GOOSE_SKILL_MODEL", None::<&str>),
+            ("GOOSE_SKILL_CONTEXT_LIMIT", None::<&str>),
+        ]);
+        let provider = StaticProvider {
+            name: "openai",
+            model_config: ModelConfig::new_or_fail("gpt-4o"),
+        };
+        let scope = ReviewScope {
+            include_memory_tools: true,
+            include_skill_tools: false,
+        };
+
+        let resolved = resolve_review_model_config(&provider, &scope).unwrap();
+        assert_eq!(resolved.model_name, "gpt-4o");
+    }
+
+    #[test]
+    fn test_resolve_review_model_config_uses_skill_model_override() {
+        let _guard = env_lock::lock_env([
+            ("GOOSE_SKILL_MODEL", Some("gpt-4.1")),
+            ("GOOSE_SKILL_CONTEXT_LIMIT", Some("64000")),
+        ]);
+        let provider = StaticProvider {
+            name: "openai",
+            model_config: ModelConfig::new_or_fail("gpt-4o"),
+        };
+        let scope = ReviewScope {
+            include_memory_tools: true,
+            include_skill_tools: true,
+        };
+
+        let resolved = resolve_review_model_config(&provider, &scope).unwrap();
+        assert_eq!(resolved.model_name, "gpt-4.1");
+        assert_eq!(resolved.context_limit, Some(64_000));
     }
 }

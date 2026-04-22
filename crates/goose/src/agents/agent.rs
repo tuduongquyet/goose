@@ -59,6 +59,7 @@ use rmcp::model::{
 };
 use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument, warn};
 
@@ -155,6 +156,7 @@ pub struct Agent {
     container: Mutex<Option<Container>>,
     /// Counts user turns since last background memory review (resets after firing).
     pub(super) turns_since_memory_review: std::sync::atomic::AtomicU32,
+    background_tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -254,7 +256,34 @@ impl Agent {
             ),
             container: Mutex::new(None),
             turns_since_memory_review: std::sync::atomic::AtomicU32::new(0),
+            background_tasks: Mutex::new(Vec::new()),
         }
+    }
+
+    async fn register_background_task(&self, handle: JoinHandle<()>) {
+        self.background_tasks.lock().await.push(handle);
+    }
+
+    pub async fn drain_background_tasks(&self) {
+        loop {
+            let handles = {
+                let mut background_tasks = self.background_tasks.lock().await;
+                if background_tasks.is_empty() {
+                    break;
+                }
+                std::mem::take(&mut *background_tasks)
+            };
+
+            for handle in handles {
+                if let Err(e) = handle.await {
+                    warn!("Background task failed to join: {}", e);
+                }
+            }
+        }
+    }
+
+    pub async fn close_extensions(&self) {
+        self.extension_manager.close_all_clients().await;
     }
 
     /// Create a tool inspection manager with default inspectors
@@ -1205,7 +1234,7 @@ impl Agent {
         let session_id = session_config.id.clone();
         if !self.config.disable_session_naming {
             let manager_for_spawn = session_manager.clone();
-            tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 if let Err(e) = manager_for_spawn
                     .maybe_update_name(&session_id, provider)
                     .await
@@ -1213,10 +1242,11 @@ impl Agent {
                     warn!("Failed to generate session description: {}", e);
                 }
             });
+            self.register_background_task(handle).await;
         }
 
-        // Count tool calls present before this reply — everything added during
-        // the reply loop is part of the current turn and should not be summarized.
+        // Count tool calls present before this reply so we only summarize
+        // tool pairs created during the current turn.
         let pre_turn_tool_count = conversation
             .messages()
             .iter()
@@ -1235,6 +1265,7 @@ impl Agent {
             });
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
+            let mut tool_iterations_this_reply = 0u32;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1348,6 +1379,8 @@ impl Agent {
                                     messages_to_add.push(response);
                                     continue;
                                 }
+
+                                tool_iterations_this_reply += 1;
 
                                 let mut request_to_response_map = HashMap::new();
                                 let mut request_metadata: HashMap<String, Option<ProviderMetadata>> = HashMap::new();
@@ -1815,14 +1848,9 @@ impl Agent {
             let turns_since = self.turns_since_memory_review.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
             let should_review_memory =
                 turns_since >= super::knowledge_review::DEFAULT_MEMORY_REVIEW_INTERVAL;
-
-            let final_tool_count = conversation.messages().iter()
-                .flat_map(|m| m.content.iter())
-                .filter(|c| matches!(c, MessageContent::ToolRequest(_)))
-                .count()
-                .saturating_sub(pre_turn_tool_count);
-            let should_review_skills =
-                final_tool_count as u32 >= super::knowledge_review::DEFAULT_SKILL_REVIEW_ITERATIONS;
+            let skill_review_threshold =
+                super::knowledge_review::resolve_skill_review_iterations();
+            let should_review_skills = tool_iterations_this_reply >= skill_review_threshold;
 
             // Only run background reviews if adaptive_memory is actually enabled
             let adaptive_memory_enabled = self.extension_manager
@@ -1842,7 +1870,7 @@ impl Agent {
                         // Always include memory when skill review fires — complex work
                         // often surfaces environment facts worth remembering too.
                         let review_memory = true;
-                        super::knowledge_review::spawn_background_review(
+                        let handle = super::knowledge_review::spawn_background_review(
                             provider,
                             Arc::clone(&self.extension_manager),
                             Arc::clone(&self.config.session_manager),
@@ -1852,6 +1880,7 @@ impl Agent {
                             review_memory,
                             should_review_skills,
                         );
+                        self.register_background_task(handle).await;
                     }
                 }
             }
@@ -2339,6 +2368,10 @@ mod tests {
     use crate::permission::permission_confirmation::PrincipalType;
     use crate::providers::base::PermissionRouting;
     use crate::recipe::Response;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use tokio::sync::Notify;
+    use tokio::time::{timeout, Duration};
 
     struct ActionRequiredProvider {
         handled: tokio::sync::Mutex<Vec<(String, PermissionConfirmation)>>,
@@ -2454,6 +2487,32 @@ mod tests {
 
         let conf = rx.await.unwrap();
         assert_eq!(conf.permission, crate::permission::Permission::AllowOnce);
+    }
+
+    #[tokio::test]
+    async fn test_drain_background_tasks_waits_for_registered_tasks() {
+        let agent = Agent::new();
+        let completed = Arc::new(AtomicBool::new(false));
+        let notify = Arc::new(Notify::new());
+
+        let completed_clone = Arc::clone(&completed);
+        let notify_clone = Arc::clone(&notify);
+        let handle = tokio::spawn(async move {
+            notify_clone.notified().await;
+            completed_clone.store(true, Ordering::SeqCst);
+        });
+        agent.register_background_task(handle).await;
+
+        let drain = agent.drain_background_tasks();
+        tokio::pin!(drain);
+        assert!(timeout(Duration::from_millis(25), &mut drain)
+            .await
+            .is_err());
+
+        notify.notify_waiters();
+        drain.await;
+
+        assert!(completed.load(Ordering::SeqCst));
     }
 
     #[tokio::test]

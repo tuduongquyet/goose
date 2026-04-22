@@ -535,6 +535,9 @@ impl CliSession {
                 .await?;
         }
 
+        self.agent.drain_background_tasks().await;
+        self.agent.close_extensions().await;
+
         println!(
             "\n  {} {}",
             console::style("●").red(),
@@ -987,8 +990,12 @@ impl CliSession {
     /// Process a single message and exit
     pub async fn headless(&mut self, prompt: String) -> Result<()> {
         let message = Message::user().with_text(&prompt);
-        self.process_message(message, CancellationToken::default(), false)
-            .await?;
+        let result = self
+            .process_message(message, CancellationToken::default(), false)
+            .await;
+        self.agent.drain_background_tasks().await;
+        self.agent.close_extensions().await;
+        result?;
         Ok(())
     }
 
