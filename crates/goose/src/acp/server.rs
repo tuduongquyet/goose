@@ -1120,7 +1120,7 @@ impl GooseAcpAgent {
                             })
                             .unwrap_or_default();
                         let raw = RawTextContent {
-                            text: text.text.clone(),
+                            text: sanitize_unicode_tags(&text.text),
                             meta: None,
                         };
                         if audience.is_empty() {
@@ -1129,8 +1129,7 @@ impl GooseAcpAgent {
                             raw.no_annotation().with_audience(audience)
                         }
                     } else {
-                        // No annotations — regular user text; sanitize against
-                        // invisible Unicode tag prompt-injection.
+                        // No annotations — regular user text.
                         let sanitized = sanitize_unicode_tags(&text.text);
                         RawTextContent {
                             text: sanitized,
