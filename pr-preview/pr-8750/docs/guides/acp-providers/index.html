@@ -20,7 +20,7 @@
 
 
 <link rel="alternate" type="text/plain" title="LLM context" href="/llms.txt"><link rel="stylesheet" href="/pr-preview/pr-8750/assets/css/styles.2c59fb67.css">
-<script src="/pr-preview/pr-8750/assets/js/runtime~main.86553f81.js" defer="defer"></script>
+<script src="/pr-preview/pr-8750/assets/js/runtime~main.44bb1065.js" defer="defer"></script>
 <script src="/pr-preview/pr-8750/assets/js/main.3ed0a267.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -46,7 +46,7 @@
 <li class="">Authenticated with your Amp account (<code>amp</code> CLI working)</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="claude-acp">Claude ACP<a href="#claude-acp" class="hash-link" aria-label="Direct link to Claude ACP" title="Direct link to Claude ACP" translate="no">​</a></h3>
-<p>Wraps <a href="https://github.com/zed-industries/claude-agent-acp" target="_blank" rel="noopener noreferrer" class="">claude-agent-acp</a>, an ACP adapter for Anthropic&#x27;s Claude Code. Uses the same Claude subscription as the deprecated <code>claude-code</code> CLI provider.</p>
+<p>Wraps <a href="https://github.com/agentclientprotocol/claude-agent-acp" target="_blank" rel="noopener noreferrer" class="">claude-agent-acp</a>, an ACP adapter for Anthropic&#x27;s Claude Code. Uses the same Claude subscription as the deprecated <code>claude-code</code> CLI provider.</p>
 <p><strong>Requirements:</strong></p>
 <ul>
 <li class="">Node.js and npm</li>
@@ -95,7 +95,7 @@
 <ol>
 <li class="">
 <p><strong>Install the ACP adapter</strong></p>
-<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">npm install -g @zed-industries/claude-agent-acp</span><br></span></code></pre></div></div>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#393A34"><span class="token plain">npm install -g @agentclientprotocol/claude-agent-acp</span><br></span></code></pre></div></div>
 </li>
 <li class="">
 <p><strong>Authenticate with Claude</strong></p>
@@ -164,7 +164,7 @@
 </ul>
 <p><strong>Permission Modes (<code>GOOSE_MODE</code>):</strong></p>
 <table><thead><tr><th>Mode</th><th>Session Mode</th><th>Behavior</th></tr></thead><tbody><tr><td><code>auto</code></td><td><code>bypassPermissions</code></td><td>Skips all permission checks</td></tr><tr><td><code>smart-approve</code></td><td><code>acceptEdits</code></td><td>Auto-accepts file edits, prompts for risky operations</td></tr><tr><td><code>approve</code></td><td><code>default</code></td><td>Prompts for all permission-required operations</td></tr><tr><td><code>chat</code></td><td><code>plan</code></td><td>Planning only, no tool execution</td></tr></tbody></table>
-<p>See <a href="https://github.com/zed-industries/claude-agent-acp" target="_blank" rel="noopener noreferrer" class="">claude-agent-acp</a> for session mode details.</p>
+<p>See <a href="https://github.com/agentclientprotocol/claude-agent-acp" target="_blank" rel="noopener noreferrer" class="">claude-agent-acp</a> for session mode details.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="codex-acp-configuration">Codex ACP Configuration<a href="#codex-acp-configuration" class="hash-link" aria-label="Direct link to Codex ACP Configuration" title="Direct link to Codex ACP Configuration" translate="no">​</a></h3>
 <table><thead><tr><th>Environment Variable</th><th>Description</th><th>Default</th></tr></thead><tbody><tr><td><code>GOOSE_PROVIDER</code></td><td>Set to <code>codex-acp</code></td><td>None</td></tr><tr><td><code>GOOSE_MODEL</code></td><td>Model to use</td><td><code>gpt-5.2-codex</code></td></tr><tr><td><code>GOOSE_MODE</code></td><td>Permission mode</td><td><code>auto</code></td></tr></tbody></table>
 <p><strong>Known Models:</strong></p>
