@@ -121,6 +121,11 @@ impl GooseCompleter {
         Ok((line.len(), vec![]))
     }
 
+    /// Complete model names for the /model command.
+    fn complete_model_names(&self, line: &str) -> Result<(usize, Vec<Pair>)> {
+        Ok((line.len(), vec![]))
+    }
+
     /// Complete slash commands
     fn complete_slash_commands(&self, line: &str) -> Result<(usize, Vec<Pair>)> {
         // Define available slash commands
@@ -135,6 +140,7 @@ impl GooseCompleter {
             "/prompts",
             "/prompt",
             "/mode",
+            "/model",
             "/recipe",
         ];
 
@@ -374,6 +380,10 @@ impl Completer for GooseCompleter {
                 return self.complete_mode_flags(line);
             }
 
+            if line.starts_with("/model") {
+                return self.complete_model_names(line);
+            }
+
             return Ok((pos, vec![]));
         }
 
@@ -542,6 +552,20 @@ mod tests {
         // Test no match
         let (_pos, candidates) = completer.complete_slash_commands("/nonexistent").unwrap();
         assert_eq!(candidates.len(), 0);
+    }
+
+    #[test]
+    fn test_complete_model_names() {
+        let cache = create_test_cache();
+        let completer = GooseCompleter::new(cache);
+
+        let (pos, candidates) = completer.complete_model_names("/model ").unwrap();
+        assert_eq!(pos, "/model ".len());
+        assert!(candidates.is_empty());
+
+        let (pos, candidates) = completer.complete_model_names("/model gpt").unwrap();
+        assert_eq!(pos, "/model gpt".len());
+        assert!(candidates.is_empty());
     }
 
     #[test]
