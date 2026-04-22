@@ -36,11 +36,16 @@ export type MessageRole = "user" | "assistant" | "system";
 /** ACP audience restriction — which roles may see a content block. */
 export type Audience = ("user" | "assistant")[];
 
+/** ACP content-block annotations (mirrors the SDK's Annotations shape). */
+export interface ContentAnnotations {
+  audience?: Audience;
+}
+
 // Content block types
 export interface TextContent {
   type: "text";
   text: string;
-  annotations?: { audience?: Audience };
+  annotations?: ContentAnnotations;
 }
 
 export interface ImageContent {

@@ -77,7 +77,7 @@ export async function acpSendMessage(
       type: "text",
       text: systemPrompt,
       annotations: { audience: ["assistant"] },
-    } as ContentBlock);
+    });
   }
   content.push({ type: "text", text: prompt });
   if (images) {
