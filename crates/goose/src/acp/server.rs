@@ -32,9 +32,9 @@ use anyhow::Result;
 use fs_err as fs;
 use futures::future::BoxFuture;
 use goose_acp_macros::custom_methods;
-use rmcp::model::{CallToolResult, RawContent, ResourceContents, Role};
+use rmcp::model::{AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role};
 use sacp::schema::{
-    AgentCapabilities, AuthMethod, AuthMethodAgent, AuthenticateRequest, AuthenticateResponse,
+    AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest, AuthenticateResponse,
     BlobResourceContents, CancelNotification, CloseSessionRequest, CloseSessionResponse,
     ConfigOptionUpdate, Content, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResource,
     EmbeddedResourceResource, FileSystemCapabilities, ForkSessionRequest, ForkSessionResponse,
@@ -1101,7 +1101,30 @@ impl GooseAcpAgent {
         for block in prompt {
             match block {
                 ContentBlock::Text(text) => {
-                    message = message.with_text(&text.text);
+                    let raw = RawTextContent {
+                        text: text.text.clone(),
+                        meta: None,
+                    };
+                    let annotated = if let Some(ref ann) = text.annotations {
+                        let audience: Vec<Role> = ann
+                            .audience
+                            .as_ref()
+                            .map(|roles| {
+                                roles
+                                    .iter()
+                                    .filter_map(|r| match r {
+                                        sacp::schema::Role::Assistant => Some(Role::Assistant),
+                                        sacp::schema::Role::User => Some(Role::User),
+                                        _ => None,
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        raw.no_annotation().with_audience(audience)
+                    } else {
+                        raw.no_annotation()
+                    };
+                    message = message.with_content(MessageContent::Text(annotated));
                 }
                 ContentBlock::Image(image) => {
                     message = message.with_image(&image.data, &image.mime_type);
@@ -1832,9 +1855,19 @@ impl GooseAcpAgent {
             for content_item in &message.content {
                 match content_item {
                     MessageContent::Text(text) => {
-                        let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(
-                            text.text.clone(),
-                        )));
+                        let mut tc = TextContent::new(text.text.clone());
+                        if let Some(audience) = text.audience() {
+                            tc = tc.annotations(Annotations::new().audience(
+                                audience
+                                    .iter()
+                                    .map(|r| match r {
+                                        Role::Assistant => sacp::schema::Role::Assistant,
+                                        Role::User => sacp::schema::Role::User,
+                                    })
+                                    .collect::<Vec<_>>(),
+                            ));
+                        }
+                        let chunk = ContentChunk::new(ContentBlock::Text(tc));
                         let update = match message.role {
                             Role::User => SessionUpdate::UserMessageChunk(chunk),
                             Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
@@ -2040,40 +2073,10 @@ impl GooseAcpAgent {
             .await?;
         debug!(target: "perf", sid = %sid, ms = t_agent.elapsed().as_millis() as u64, "perf: prompt get_session_agent (waits for agent setup)");
 
-        // Extract system prompt from _meta if provided, persist as hidden message
-        let system_prompt = args
-            .meta
-            .as_ref()
-            .and_then(|m| m.get("systemPrompt"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
 
-        // Build the agent message: system prompt + user content combined
-        let agent_message = if let Some(ref sp) = system_prompt {
-            let mut msg = Message::user().with_text(sp);
-            for content in user_message.content.iter() {
-                msg.content.push(content.clone());
-            }
-            msg
-        } else {
-            user_message.clone()
-        };
-
         let t_persist = std::time::Instant::now();
-        // Persist hidden system prompt message if present
-        if let Some(ref sp) = system_prompt {
-            let context_msg = Message::user().with_text(sp).agent_only();
-            self.thread_manager
-                .append_message(&thread_id, Some(&internal_session_id), &context_msg)
-                .await
-                .map_err(|e| {
-                    sacp::Error::internal_error()
-                        .data(format!("Failed to persist message: {}", e))
-                })?;
-        }
-        // Persist visible user message
+        // Persist user message (may contain assistant-only annotated blocks)
         self.thread_manager
             .append_message(&thread_id, Some(&internal_session_id), &user_message)
             .await
@@ -2092,7 +2095,7 @@ impl GooseAcpAgent {
 
         let t_reply = std::time::Instant::now();
         let mut stream = agent
-            .reply(agent_message, session_config, Some(cancel_token.clone()))
+            .reply(user_message, session_config, Some(cancel_token.clone()))
             .await
             .map_err(|e| {
                 sacp::Error::internal_error().data(format!("Error getting agent reply: {}", e))

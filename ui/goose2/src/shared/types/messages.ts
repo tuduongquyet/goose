@@ -37,6 +37,7 @@ export type MessageRole = "user" | "assistant" | "system";
 export interface TextContent {
   type: "text";
   text: string;
+  annotations?: { audience?: ("user" | "assistant")[] };
 }
 
 export interface ImageContent {

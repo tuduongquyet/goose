@@ -318,7 +318,12 @@ export const MessageBubble = memo(function MessageBubble({
 }: MessageBubbleProps) {
   const { t } = useTranslation(["chat", "common"]);
   const { formatDate } = useLocaleFormatting();
-  const { role, content, created } = message;
+  const { role, content: rawContent, created } = message;
+  // Filter out assistant-only blocks (e.g. system prompt context)
+  const content = rawContent.filter((b) => {
+    const aud = b.type === "text" ? b.annotations?.audience : undefined;
+    return !aud || aud.includes("user");
+  });
   const { handleContentClick, pathNotice } = useArtifactLinkHandler();
   const persona = useAgentStore((state) =>
     message.metadata?.personaId

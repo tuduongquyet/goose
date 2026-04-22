@@ -10,6 +10,7 @@ import {
   findLatestUnpairedToolRequest,
 } from "@/features/chat/hooks/replayBuffer";
 import type {
+  TextContent,
   ToolRequestContent,
   ToolResponseContent,
 } from "@/shared/types/messages";
@@ -196,31 +197,29 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
     }
 
     case "user_message_chunk": {
+      if (update.content.type !== "text" || !("text" in update.content)) break;
       const messageId = update.messageId ?? crypto.randomUUID();
       const buffer = ensureReplayBuffer(sessionId);
       const existing = getBufferedMessage(sessionId, messageId);
-      if (
-        !existing &&
-        update.content.type === "text" &&
-        "text" in update.content
-      ) {
+      // biome-ignore lint/suspicious/noExplicitAny: ACP SDK type narrowing
+      const ann = (update.content as any).annotations as
+        | { audience?: ("user" | "assistant")[] }
+        | undefined;
+      const textBlock = makeTextBlock(update.content.text, ann);
+      if (!existing) {
         buffer.push({
           id: messageId,
           role: "user",
           created: Date.now(),
-          content: [{ type: "text", text: update.content.text }],
+          content: [textBlock],
           metadata: { userVisible: true, agentVisible: true },
         });
-      } else if (
-        existing &&
-        update.content.type === "text" &&
-        "text" in update.content
-      ) {
+      } else {
         const last = existing.content[existing.content.length - 1];
-        if (last?.type === "text") {
+        if (last?.type === "text" && !ann) {
           (last as { type: "text"; text: string }).text += update.content.text;
         } else {
-          existing.content.push({ type: "text", text: update.content.text });
+          existing.content.push(textBlock);
         }
       }
       break;
@@ -484,6 +483,13 @@ function handleShared(sessionId: string, update: SessionUpdate): void {
 function findStreamingMessageId(sessionId: string): string | null {
   return useChatStore.getState().getSessionRuntime(sessionId)
     .streamingMessageId;
+}
+
+function makeTextBlock(
+  text: string,
+  ann?: TextContent["annotations"],
+): TextContent {
+  return { type: "text", text, ...(ann ? { annotations: ann } : {}) };
 }
 
 function findMessageInBuffer(
