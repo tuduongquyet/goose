@@ -37,7 +37,6 @@ import type {
   Message,
   MessageAttachment,
   MessageContent,
-  ContentAnnotations,
   TextContent,
   ImageContent,
   ToolResponseContent,
@@ -101,9 +100,7 @@ interface ContentSection {
 /** Keep only content blocks whose audience includes "user" (or has no audience). */
 function filterUserVisibleContent(content: MessageContent[]): MessageContent[] {
   return content.filter((b) => {
-    if (!("annotations" in b)) return true;
-    const aud = (b as { annotations?: ContentAnnotations }).annotations
-      ?.audience;
+    const aud = b.annotations?.audience;
     return !aud || aud.includes("user");
   });
 }
@@ -337,6 +334,7 @@ export const MessageBubble = memo(function MessageBubble({
     .filter((c): c is TextContent => c.type === "text")
     .map((c) => c.text)
     .join("\n");
+
   if (role === "system") {
     return (
       <div className="flex justify-center px-4 py-2">
