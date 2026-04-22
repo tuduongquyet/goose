@@ -100,7 +100,10 @@ interface ContentSection {
 /** Keep only content blocks whose audience includes "user" (or has no audience). */
 function filterUserVisibleContent(content: MessageContent[]): MessageContent[] {
   return content.filter((b) => {
-    const aud = b.type === "text" ? b.annotations?.audience : undefined;
+    const aud =
+      "annotations" in b
+        ? (b.annotations as { audience?: string[] })?.audience
+        : undefined;
     return !aud || aud.includes("user");
   });
 }
