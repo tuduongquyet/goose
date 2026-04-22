@@ -33,11 +33,14 @@ export type ChatAttachmentDraft =
 // Message roles
 export type MessageRole = "user" | "assistant" | "system";
 
+/** ACP audience restriction — which roles may see a content block. */
+export type Audience = ("user" | "assistant")[];
+
 // Content block types
 export interface TextContent {
   type: "text";
   text: string;
-  annotations?: { audience?: ("user" | "assistant")[] };
+  annotations?: { audience?: Audience };
 }
 
 export interface ImageContent {

@@ -1,7 +1,7 @@
 use crate::acp::custom_requests::*;
 use crate::acp::fs::AcpTools;
 use crate::acp::tools::AcpAwareToolMeta;
-use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
+use crate::acp::{ACP_CURRENT_MODEL, PermissionDecision};
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::platform_extensions::developer::DeveloperClient;
@@ -15,7 +15,7 @@ use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 #[cfg(feature = "local-inference")]
 use crate::dictation::providers::transcribe_local;
 use crate::dictation::providers::{
-    all_providers, is_configured, transcribe_with_provider, DictationProvider,
+    DictationProvider, all_providers, is_configured, transcribe_with_provider,
 };
 #[cfg(feature = "local-inference")]
 use crate::dictation::whisper;
@@ -28,28 +28,31 @@ use crate::providers::inventory::{
 };
 use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
+use crate::utils::sanitize_unicode_tags;
 use anyhow::Result;
 use fs_err as fs;
 use futures::future::BoxFuture;
 use goose_acp_macros::custom_methods;
-use rmcp::model::{AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role};
+use rmcp::model::{
+    AnnotateAble, CallToolResult, RawContent, RawTextContent, ResourceContents, Role,
+};
 use sacp::schema::{
-    AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest, AuthenticateResponse,
-    BlobResourceContents, CancelNotification, CloseSessionRequest, CloseSessionResponse,
-    ConfigOptionUpdate, Content, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResource,
-    EmbeddedResourceResource, FileSystemCapabilities, ForkSessionRequest, ForkSessionResponse,
-    ImageContent, InitializeRequest, InitializeResponse, ListSessionsRequest, ListSessionsResponse,
-    LoadSessionRequest, LoadSessionResponse, McpCapabilities, McpServer, Meta, ModelId, ModelInfo,
-    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
-    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
-    RequestPermissionRequest, ResourceLink, SessionCapabilities, SessionCloseCapabilities,
-    SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelectOption, SessionId,
-    SessionInfo, SessionListCapabilities, SessionMode, SessionModeId, SessionModeState,
-    SessionModelState, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse,
-    SetSessionModelRequest, SetSessionModelResponse, StopReason, TextContent, TextResourceContents,
-    ToolCall, ToolCallContent, ToolCallId, ToolCallLocation, ToolCallStatus, ToolCallUpdate,
-    ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
+    AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
+    AuthenticateResponse, BlobResourceContents, CancelNotification, CloseSessionRequest,
+    CloseSessionResponse, ConfigOptionUpdate, Content, ContentBlock, ContentChunk,
+    CurrentModeUpdate, EmbeddedResource, EmbeddedResourceResource, FileSystemCapabilities,
+    ForkSessionRequest, ForkSessionResponse, ImageContent, InitializeRequest, InitializeResponse,
+    ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
+    McpCapabilities, McpServer, Meta, ModelId, ModelInfo, NewSessionRequest, NewSessionResponse,
+    PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
+    RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
+    SessionCloseCapabilities, SessionConfigOption, SessionConfigOptionCategory,
+    SessionConfigSelectOption, SessionId, SessionInfo, SessionListCapabilities, SessionMode,
+    SessionModeId, SessionModeState, SessionModelState, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, SetSessionModelRequest, SetSessionModelResponse, StopReason,
+    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
+    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
 };
 use sacp::util::MatchDispatchFrom;
 use sacp::{
@@ -1101,10 +1104,6 @@ impl GooseAcpAgent {
         for block in prompt {
             match block {
                 ContentBlock::Text(text) => {
-                    let raw = RawTextContent {
-                        text: text.text.clone(),
-                        meta: None,
-                    };
                     let annotated = if let Some(ref ann) = text.annotations {
                         let audience: Vec<Role> = ann
                             .audience
@@ -1120,9 +1119,24 @@ impl GooseAcpAgent {
                                     .collect()
                             })
                             .unwrap_or_default();
-                        raw.no_annotation().with_audience(audience)
+                        let raw = RawTextContent {
+                            text: text.text.clone(),
+                            meta: None,
+                        };
+                        if audience.is_empty() {
+                            raw.no_annotation()
+                        } else {
+                            raw.no_annotation().with_audience(audience)
+                        }
                     } else {
-                        raw.no_annotation()
+                        // No annotations — regular user text; sanitize against
+                        // invisible Unicode tag prompt-injection.
+                        let sanitized = sanitize_unicode_tags(&text.text);
+                        RawTextContent {
+                            text: sanitized,
+                            meta: None,
+                        }
+                        .no_annotation()
                     };
                     message = message.with_content(MessageContent::Text(annotated));
                 }
@@ -1857,15 +1871,17 @@ impl GooseAcpAgent {
                     MessageContent::Text(text) => {
                         let mut tc = TextContent::new(text.text.clone());
                         if let Some(audience) = text.audience() {
-                            tc = tc.annotations(Annotations::new().audience(
-                                audience
-                                    .iter()
-                                    .map(|r| match r {
-                                        Role::Assistant => sacp::schema::Role::Assistant,
-                                        Role::User => sacp::schema::Role::User,
-                                    })
-                                    .collect::<Vec<_>>(),
-                            ));
+                            tc = tc.annotations(
+                                Annotations::new().audience(
+                                    audience
+                                        .iter()
+                                        .map(|r| match r {
+                                            Role::Assistant => sacp::schema::Role::Assistant,
+                                            Role::User => sacp::schema::Role::User,
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ),
+                            );
                         }
                         let chunk = ContentChunk::new(ContentBlock::Text(tc));
                         let update = match message.role {
@@ -2081,8 +2097,7 @@ impl GooseAcpAgent {
             .append_message(&thread_id, Some(&internal_session_id), &user_message)
             .await
             .map_err(|e| {
-                sacp::Error::internal_error()
-                    .data(format!("Failed to persist message: {}", e))
+                sacp::Error::internal_error().data(format!("Failed to persist message: {}", e))
             })?;
         debug!(target: "perf", sid = %sid, ms = t_persist.elapsed().as_millis() as u64, "perf: prompt append_user_message");
 
@@ -3190,7 +3205,7 @@ impl GooseAcpAgent {
         &self,
         req: DictationTranscribeRequest,
     ) -> Result<DictationTranscribeResponse, sacp::Error> {
-        use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+        use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
         let config = crate::config::Config::global();
 
         #[cfg(not(feature = "local-inference"))]
@@ -3223,7 +3238,7 @@ impl GooseAcpAgent {
             other => {
                 return Err(
                     sacp::Error::invalid_params().data(format!("Unsupported format: {other}"))
-                )
+                );
             }
         };
 
@@ -3329,7 +3344,7 @@ impl GooseAcpAgent {
     ) -> Result<DictationModelsListResponse, sacp::Error> {
         #[cfg(feature = "local-inference")]
         {
-            use crate::download_manager::{get_download_manager, DownloadStatus};
+            use crate::download_manager::{DownloadStatus, get_download_manager};
 
             let manager = get_download_manager();
             let models = whisper::available_models()

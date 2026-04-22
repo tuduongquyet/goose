@@ -205,7 +205,7 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
       // but the wire format includes it. Guard with a runtime typeof check.
       // biome-ignore lint/suspicious/noExplicitAny: ACP SDK type narrowing
       const rawAnn = (update.content as any).annotations;
-      const ann: { audience?: ("user" | "assistant")[] } | undefined =
+      const ann: TextContent["annotations"] | undefined =
         typeof rawAnn === "object" && rawAnn !== null ? rawAnn : undefined;
       const textBlock = makeTextBlock(update.content.text, ann);
       if (!existing) {
