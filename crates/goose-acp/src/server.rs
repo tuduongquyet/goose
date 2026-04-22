@@ -4,7 +4,7 @@ use crate::tools::AcpAwareToolMeta;
 use anyhow::Result;
 use fs_err as fs;
 use futures::future::BoxFuture;
-use goose::acp::{PermissionDecision, ACP_CURRENT_MODEL};
+use goose::acp::{ACP_CURRENT_MODEL, PermissionDecision};
 use goose::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use goose::agents::mcp_client::McpClientTrait;
 use goose::agents::platform_extensions::developer::DeveloperClient;
@@ -49,8 +49,9 @@ use sacp::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use strum::{EnumMessage, VariantNames};
-use tokio::sync::{Mutex, OnceCell};
+use tokio::sync::{Mutex, Notify, OnceCell};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -92,6 +93,8 @@ struct GooseAcpSession {
     internal_session_id: String,
     tool_requests: HashMap<String, goose::conversation::message::ToolRequest>,
     cancel_token: Option<CancellationToken>,
+    active_prompts: usize,
+    prompt_idle: Arc<Notify>,
     /// Working directory set while the agent was still loading.
     /// Applied once the agent becomes ready.
     pending_working_dir: Option<std::path::PathBuf>,
@@ -126,6 +129,9 @@ pub struct GooseAcpAgent {
     permission_manager: Arc<PermissionManager>,
     goose_mode: GooseMode,
     disable_session_naming: bool,
+    shutdown_started: AtomicBool,
+    shutdown_complete: AtomicBool,
+    shutdown_notify: Notify,
 }
 
 fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
@@ -627,6 +633,9 @@ impl GooseAcpAgent {
             permission_manager,
             goose_mode,
             disable_session_naming,
+            shutdown_started: AtomicBool::new(false),
+            shutdown_complete: AtomicBool::new(false),
+            shutdown_notify: Notify::new(),
         })
     }
 
@@ -1226,6 +1235,106 @@ fn build_tool_call_content(tool_result: &ToolResult<CallToolResult>) -> Vec<Tool
 }
 
 impl GooseAcpAgent {
+    async fn mark_prompt_active(&self, thread_id: &str) -> Result<(), sacp::Error> {
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions.get_mut(thread_id).ok_or_else(|| {
+            sacp::Error::resource_not_found(Some(thread_id.to_string()))
+                .data(format!("Session not found: {}", thread_id))
+        })?;
+        session.active_prompts += 1;
+        Ok(())
+    }
+
+    async fn mark_prompt_inactive(&self, thread_id: &str) {
+        let mut sessions = self.sessions.lock().await;
+        let Some(session) = sessions.get_mut(thread_id) else {
+            return;
+        };
+        if session.active_prompts == 0 {
+            return;
+        }
+        session.active_prompts -= 1;
+        if session.active_prompts == 0 {
+            session.prompt_idle.notify_waiters();
+        }
+    }
+
+    async fn wait_for_active_prompts(&self, thread_id: &str) {
+        loop {
+            let notify = {
+                let sessions = self.sessions.lock().await;
+                let Some(session) = sessions.get(thread_id) else {
+                    return;
+                };
+                if session.active_prompts == 0 {
+                    return;
+                }
+                Arc::clone(&session.prompt_idle)
+            };
+            debug!(thread_id = %thread_id, "waiting for active ACP prompt teardown");
+            notify.notified().await;
+        }
+    }
+
+    async fn drain_session_background_tasks(&self, thread_id: &str) {
+        match self.get_session_agent(thread_id, None).await {
+            Ok(agent) => agent.drain_background_tasks().await,
+            Err(e) => {
+                warn!(thread_id = %thread_id, error = ?e, "failed to drain ACP session background tasks")
+            }
+        }
+    }
+
+    async fn on_transport_close_session(&self, thread_id: &str) -> Result<(), sacp::Error> {
+        debug!(thread_id = %thread_id, "starting ACP transport-close session cleanup");
+        self.wait_for_active_prompts(thread_id).await;
+        self.drain_session_background_tasks(thread_id).await;
+        self.sessions.lock().await.remove(thread_id);
+        info!(thread_id = %thread_id, "ACP session closed after transport end");
+        Ok(())
+    }
+
+    async fn close_all_sessions_inner(&self) {
+        let thread_ids = {
+            let sessions = self.sessions.lock().await;
+            sessions.keys().cloned().collect::<Vec<_>>()
+        };
+
+        debug!(
+            session_count = thread_ids.len(),
+            "closing all ACP sessions after connection end"
+        );
+
+        for thread_id in thread_ids {
+            if let Err(e) = self.on_transport_close_session(&thread_id).await {
+                warn!(thread_id = %thread_id, error = ?e, "failed to close ACP session");
+            }
+        }
+
+        debug!("finished closing ACP sessions after connection end");
+    }
+
+    async fn shutdown_sessions(&self) {
+        if self
+            .shutdown_started
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            debug!("ACP shutdown_sessions primary path starting");
+            self.close_all_sessions_inner().await;
+            self.shutdown_complete.store(true, Ordering::SeqCst);
+            self.shutdown_notify.notify_waiters();
+            debug!("ACP shutdown_sessions primary path complete");
+            return;
+        }
+
+        debug!("ACP shutdown_sessions waiting for existing shutdown");
+        while !self.shutdown_complete.load(Ordering::SeqCst) {
+            self.shutdown_notify.notified().await;
+        }
+        debug!("ACP shutdown_sessions observed completed shutdown");
+    }
+
     async fn on_initialize(
         &self,
         args: InitializeRequest,
@@ -1312,6 +1421,8 @@ impl GooseAcpAgent {
             internal_session_id: internal_session_id.clone(),
             tool_requests: HashMap::new(),
             cancel_token: None,
+            active_prompts: 0,
+            prompt_idle: Arc::new(Notify::new()),
             pending_working_dir: None,
         };
         self.sessions
@@ -1643,6 +1754,8 @@ impl GooseAcpAgent {
             internal_session_id: internal_session_id.clone(),
             tool_requests: replay_tool_requests,
             cancel_token: None,
+            active_prompts: 0,
+            prompt_idle: Arc::new(Notify::new()),
             pending_working_dir: None,
         };
         self.sessions
@@ -1690,84 +1803,96 @@ impl GooseAcpAgent {
         let agent = self
             .get_session_agent(&thread_id, Some(cancel_token.clone()))
             .await?;
+        self.mark_prompt_active(&thread_id).await?;
 
-        let user_message = self.convert_acp_prompt_to_message(args.prompt);
+        let result = async {
+            let user_message = self.convert_acp_prompt_to_message(args.prompt);
 
-        self.thread_manager
-            .append_message(&thread_id, Some(&internal_session_id), &user_message)
-            .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Failed to persist message: {}", e))
-            })?;
+            self.thread_manager
+                .append_message(&thread_id, Some(&internal_session_id), &user_message)
+                .await
+                .map_err(|e| {
+                    sacp::Error::internal_error().data(format!("Failed to persist message: {}", e))
+                })?;
 
-        let session_config = SessionConfig {
-            id: internal_session_id.clone(),
-            schedule_id: None,
-            max_turns: None,
-            retry_config: None,
-        };
+            let session_config = SessionConfig {
+                id: internal_session_id.clone(),
+                schedule_id: None,
+                max_turns: None,
+                retry_config: None,
+            };
 
-        let mut stream = agent
-            .reply(user_message, session_config, Some(cancel_token.clone()))
-            .await
-            .map_err(|e| {
-                sacp::Error::internal_error().data(format!("Error getting agent reply: {}", e))
-            })?;
+            let mut stream = agent
+                .reply(user_message, session_config, Some(cancel_token.clone()))
+                .await
+                .map_err(|e| {
+                    sacp::Error::internal_error().data(format!("Error getting agent reply: {}", e))
+                })?;
 
-        use futures::StreamExt;
+            use futures::StreamExt;
 
-        let mut was_cancelled = false;
+            let mut was_cancelled = false;
 
-        while let Some(event) = stream.next().await {
-            if cancel_token.is_cancelled() {
-                was_cancelled = true;
-                break;
-            }
+            while let Some(event) = stream.next().await {
+                if cancel_token.is_cancelled() {
+                    was_cancelled = true;
+                    break;
+                }
 
-            match event {
-                Ok(goose::agents::AgentEvent::Message(message)) => {
-                    self.thread_manager
-                        .append_message(&thread_id, Some(&internal_session_id), &message)
-                        .await
-                        .map_err(|e| {
-                            sacp::Error::internal_error()
-                                .data(format!("Failed to persist message: {}", e))
+                match event {
+                    Ok(goose::agents::AgentEvent::Message(message)) => {
+                        self.thread_manager
+                            .append_message(&thread_id, Some(&internal_session_id), &message)
+                            .await
+                            .map_err(|e| {
+                                sacp::Error::internal_error()
+                                    .data(format!("Failed to persist message: {}", e))
+                            })?;
+
+                        let mut sessions = self.sessions.lock().await;
+                        let session = sessions.get_mut(&thread_id).ok_or_else(|| {
+                            sacp::Error::invalid_params()
+                                .data(format!("Session not found: {}", thread_id))
                         })?;
 
-                    let mut sessions = self.sessions.lock().await;
-                    let session = sessions.get_mut(&thread_id).ok_or_else(|| {
-                        sacp::Error::invalid_params()
-                            .data(format!("Session not found: {}", thread_id))
-                    })?;
-
-                    for content_item in &message.content {
-                        self.handle_message_content(
-                            content_item,
-                            &args.session_id,
-                            &agent,
-                            session,
-                            cx,
-                        )
-                        .await?;
+                        for content_item in &message.content {
+                            self.handle_message_content(
+                                content_item,
+                                &args.session_id,
+                                &agent,
+                                session,
+                                cx,
+                            )
+                            .await?;
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        return Err(sacp::Error::internal_error()
+                            .data(format!("Error in agent response stream: {}", e)));
                     }
                 }
-                Ok(_) => {}
-                Err(e) => {
-                    return Err(sacp::Error::internal_error()
-                        .data(format!("Error in agent response stream: {}", e)));
-                }
             }
-        }
 
-        let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get_mut(&thread_id) {
-            session.cancel_token = None;
+            let mut sessions = self.sessions.lock().await;
+            if let Some(session) = sessions.get_mut(&thread_id) {
+                tracing::debug!(
+                    thread_id = %thread_id,
+                    had_cancel_token = session.cancel_token.is_some(),
+                    "clearing ACP session cancel token after prompt"
+                );
+                session.cancel_token = None;
+            }
+            Ok(PromptResponse::new(if was_cancelled {
+                StopReason::Cancelled
+            } else {
+                StopReason::EndTurn
+            }))
         }
-        Ok(PromptResponse::new(if was_cancelled {
-            StopReason::Cancelled
-        } else {
-            StopReason::EndTurn
-        }))
+        .await;
+
+        self.mark_prompt_inactive(&thread_id).await;
+        result
     }
 
     async fn on_cancel(&self, args: CancelNotification) -> Result<(), sacp::Error> {
@@ -2102,6 +2227,8 @@ impl GooseAcpAgent {
             internal_session_id: internal_session_id.clone(),
             tool_requests: HashMap::new(),
             cancel_token: None,
+            active_prompts: 0,
+            prompt_idle: Arc::new(Notify::new()),
             pending_working_dir: None,
         };
         self.sessions
@@ -2144,14 +2271,25 @@ impl GooseAcpAgent {
     }
 
     async fn on_close_session(&self, thread_id: &str) -> Result<CloseSessionResponse, sacp::Error> {
+        debug!(thread_id = %thread_id, "starting ACP session close");
         // Tear down the in-memory agent. The thread persists for later session/load.
-        let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get(thread_id) {
-            if let Some(ref token) = session.cancel_token {
-                token.cancel();
+        {
+            let sessions = self.sessions.lock().await;
+            if let Some(session) = sessions.get(thread_id) {
+                tracing::debug!(
+                    thread_id = %thread_id,
+                    has_cancel_token = session.cancel_token.is_some(),
+                    "ACP session close inspecting cancel token"
+                );
+                if let Some(ref token) = session.cancel_token {
+                    token.cancel();
+                }
             }
         }
-        sessions.remove(thread_id);
+
+        self.drain_session_background_tasks(thread_id).await;
+
+        self.sessions.lock().await.remove(thread_id);
         info!(thread_id = %thread_id, "ACP session closed (thread preserved)");
         Ok(CloseSessionResponse::new())
     }
@@ -2876,6 +3014,7 @@ where
     W: futures::AsyncWrite + Unpin + Send + 'static,
 {
     Box::pin(async move {
+        let drain_agent = agent.clone();
         let handler = GooseAcpHandler { agent };
 
         SacpAgent
@@ -2884,6 +3023,10 @@ where
             .with_handler(handler)
             .connect_to(ByteStreams::new(write, read))
             .await?;
+
+        debug!("ACP transport closed; closing attached sessions");
+        drain_agent.shutdown_sessions().await;
+        debug!("ACP server shutdown complete");
 
         Ok(())
     })
@@ -2903,7 +3046,51 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
             config_dir: Paths::config_dir(),
         });
     let agent = server.create_agent().await?;
-    serve(agent, incoming, outgoing).await
+
+    #[cfg(unix)]
+    let shutdown_signal = async {
+        let ctrl_c = async {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to install Ctrl+C handler");
+        };
+        let terminate = async {
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install signal handler")
+                .recv()
+                .await;
+        };
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = terminate => {},
+        }
+    };
+
+    #[cfg(not(unix))]
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    let mut server_task = tokio::spawn(serve(agent.clone(), incoming, outgoing));
+
+    tokio::select! {
+        result = &mut server_task => {
+            match result {
+                Ok(inner) => inner,
+                Err(e) => Err(anyhow::anyhow!("ACP server task failed: {}", e)),
+            }
+        },
+        _ = shutdown_signal => {
+            debug!("ACP shutdown signal received; draining attached sessions");
+            agent.shutdown_sessions().await;
+            debug!("ACP signal-triggered shutdown complete");
+            server_task.abort();
+            let _ = server_task.await;
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]

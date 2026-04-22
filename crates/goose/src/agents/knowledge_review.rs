@@ -594,6 +594,13 @@ fn resolve_review_model_config(
         Err(e) => anyhow::bail!("Failed to load GOOSE_SKILL_CONTEXT_LIMIT: {}", e),
     }
 
+    match config.get_param::<i32>("GOOSE_SKILL_MAX_TOKENS") {
+        Ok(tokens) if tokens > 0 => model_config.max_tokens = Some(tokens),
+        Ok(_) => anyhow::bail!("GOOSE_SKILL_MAX_TOKENS must be greater than 0"),
+        Err(ConfigError::NotFound(_)) => {}
+        Err(e) => anyhow::bail!("Failed to load GOOSE_SKILL_MAX_TOKENS: {}", e),
+    }
+
     Ok(model_config)
 }
 
@@ -861,6 +868,7 @@ mod tests {
         let _guard = env_lock::lock_env([
             ("GOOSE_SKILL_MODEL", None::<&str>),
             ("GOOSE_SKILL_CONTEXT_LIMIT", None::<&str>),
+            ("GOOSE_SKILL_MAX_TOKENS", None::<&str>),
         ]);
         let provider = StaticProvider {
             name: "openai",
@@ -880,6 +888,7 @@ mod tests {
         let _guard = env_lock::lock_env([
             ("GOOSE_SKILL_MODEL", Some("gpt-4.1")),
             ("GOOSE_SKILL_CONTEXT_LIMIT", Some("64000")),
+            ("GOOSE_SKILL_MAX_TOKENS", Some("8192")),
         ]);
         let provider = StaticProvider {
             name: "openai",
@@ -893,5 +902,6 @@ mod tests {
         let resolved = resolve_review_model_config(&provider, &scope).unwrap();
         assert_eq!(resolved.model_name, "gpt-4.1");
         assert_eq!(resolved.context_limit, Some(64_000));
+        assert_eq!(resolved.max_tokens, Some(8192));
     }
 }

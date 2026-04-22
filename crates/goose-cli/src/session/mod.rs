@@ -536,7 +536,6 @@ impl CliSession {
         }
 
         self.agent.drain_background_tasks().await;
-        self.agent.close_extensions().await;
 
         println!(
             "\n  {} {}",
@@ -994,7 +993,6 @@ impl CliSession {
             .process_message(message, CancellationToken::default(), false)
             .await;
         self.agent.drain_background_tasks().await;
-        self.agent.close_extensions().await;
         result?;
         Ok(())
     }

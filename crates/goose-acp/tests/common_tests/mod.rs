@@ -5,14 +5,14 @@
 #[path = "../fixtures/mod.rs"]
 pub mod fixtures;
 use fixtures::{
-    assert_notifications, Connection, FsFixture, Notification, OpenAiFixture, PermissionDecision,
-    Session, SessionData, TerminalCall, TerminalFixture, TestConnectionConfig,
+    Connection, FsFixture, Notification, OpenAiFixture, PermissionDecision, Session, SessionData,
+    TerminalCall, TerminalFixture, TestConnectionConfig, assert_notifications,
 };
 use fs_err as fs;
-use goose::config::base::CONFIG_YAML_NAME;
 use goose::config::GooseMode;
+use goose::config::base::CONFIG_YAML_NAME;
 use goose_acp::server::AcpProviderFactory;
-use goose_test_support::{McpFixture, FAKE_CODE, TEST_IMAGE_B64, TEST_MODEL};
+use goose_test_support::{FAKE_CODE, McpFixture, TEST_IMAGE_B64, TEST_MODEL};
 use sacp::schema::{
     ListSessionsResponse, McpServer, McpServerHttp, ModelId, SessionInfo, SessionModeId,
     ToolCallStatus, ToolKind,
@@ -65,12 +65,11 @@ pub async fn run_list_sessions<C: Connection>() {
     );
     assert_eq!(
         response,
-        ListSessionsResponse::new(vec![SessionInfo::new(
-            session.session_id().clone(),
-            session.work_dir()
-        )
-        .title("New Chat".to_string())
-        .meta(expected_meta)])
+        ListSessionsResponse::new(vec![
+            SessionInfo::new(session.session_id().clone(), session.work_dir())
+                .title("New Chat".to_string())
+                .meta(expected_meta)
+        ])
     );
 }
 

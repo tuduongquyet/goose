@@ -1,6 +1,6 @@
 use super::{
-    map_permission_response, spawn_acp_server_in_process, Connection, PermissionDecision, Session,
-    SessionData, TestConnectionConfig, TestOutput,
+    Connection, PermissionDecision, Session, SessionData, TestConnectionConfig, TestOutput,
+    map_permission_response, spawn_acp_server_in_process,
 };
 use async_trait::async_trait;
 use goose::config::PermissionManager;
@@ -23,6 +23,8 @@ use tokio::sync::Notify;
 
 pub struct AcpServerConnection {
     cx: ConnectionTo<Agent>,
+    server_handle: tokio::task::JoinHandle<()>,
+    client_handle: tokio::task::JoinHandle<()>,
     // MCP servers from config, consumed by the first new_session call.
     pending_mcp_servers: Vec<McpServer>,
     cwd: Option<tempfile::TempDir>,
@@ -92,6 +94,43 @@ impl AcpServerConnection {
     pub fn cx(&self) -> &ConnectionTo<Agent> {
         &self.cx
     }
+
+    pub async fn wait_for_updates<F>(&self, predicate: F)
+    where
+        F: Fn(&[SessionNotification]) -> bool,
+    {
+        loop {
+            {
+                let updates = self.updates.lock().unwrap();
+                if predicate(&updates) {
+                    return;
+                }
+            }
+            self.notify.notified().await;
+        }
+    }
+
+    pub async fn disconnect_transport(self) {
+        let Self {
+            cx,
+            server_handle,
+            client_handle,
+            pending_mcp_servers: _,
+            cwd: _,
+            data_root: _,
+            updates: _,
+            permission: _,
+            notify: _,
+            permission_manager: _,
+            _openai: _,
+            _temp_dir: _,
+        } = self;
+
+        drop(cx);
+        client_handle.abort();
+        let _ = client_handle.await;
+        drop(server_handle);
+    }
 }
 
 #[async_trait]
@@ -114,7 +153,7 @@ impl Connection for AcpServerConnection {
             false => (config.data_root.clone(), None),
         };
 
-        let (transport, _handle, permission_manager) = spawn_acp_server_in_process(
+        let (transport, server_handle, permission_manager) = spawn_acp_server_in_process(
             openai.uri(),
             &config.builtins,
             data_root.as_path(),
@@ -136,7 +175,7 @@ impl Connection for AcpServerConnection {
             fs_cap = fs_cap.write_text_file(true);
         }
 
-        let cx = {
+        let (cx, client_handle) = {
             let updates_clone = updates.clone();
             let notify_clone = notify.clone();
             let permission_clone = permission.clone();
@@ -149,7 +188,7 @@ impl Connection for AcpServerConnection {
 
             let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
 
-            tokio::spawn(async move {
+            let client_handle = tokio::spawn(async move {
                 let result = Client
                     .builder()
                     .on_receive_notification(
@@ -287,11 +326,13 @@ impl Connection for AcpServerConnection {
 
             ready_rx.await.unwrap();
             let cx = cx_holder.lock().unwrap().take().unwrap();
-            cx
+            (cx, client_handle)
         };
 
         Self {
             cx,
+            server_handle,
+            client_handle,
             pending_mcp_servers: config.mcp_servers,
             cwd: config.cwd,
             data_root,

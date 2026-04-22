@@ -4454,6 +4454,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
+ "env-lock",
  "fs-err",
  "futures",
  "goose",
@@ -8346,7 +8347,6 @@ checksum = "dd29631678d6fb0903b69223673e122c32e9ae559d0960a38d574695ebc0ea15"
 [[package]]
 name = "sacp"
 version = "11.0.0"
-source = "git+https://github.com/agentclientprotocol/symposium-acp?rev=14086c9#14086c93482ea0618ea6ca7a4d1288953569147e"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
@@ -8370,7 +8370,6 @@ dependencies = [
 [[package]]
 name = "sacp-derive"
 version = "11.0.0"
-source = "git+https://github.com/agentclientprotocol/symposium-acp?rev=14086c9#14086c93482ea0618ea6ca7a4d1288953569147e"
 dependencies = [
  "proc-macro2",
  "quote",

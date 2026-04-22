@@ -3,7 +3,7 @@
 
 use async_trait::async_trait;
 use fs_err as fs;
-pub use goose::acp::{map_permission_response, PermissionDecision};
+pub use goose::acp::{PermissionDecision, map_permission_response};
 use goose::builtin_extension::register_builtin_extensions;
 use goose::config::paths::Paths;
 use goose::config::{GooseMode, PermissionManager};
@@ -11,7 +11,7 @@ use goose::providers::api_client::{ApiClient, AuthMethod as ApiAuthMethod};
 use goose::providers::base::Provider;
 use goose::providers::openai::OpenAiProvider;
 use goose::session_context::SESSION_ID_HEADER;
-use goose_acp::server::{serve, AcpProviderFactory, GooseAcpAgent};
+use goose_acp::server::{AcpProviderFactory, GooseAcpAgent, serve};
 use goose_test_support::{ExpectedSessionId, TEST_MODEL};
 use sacp::schema::{
     CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,

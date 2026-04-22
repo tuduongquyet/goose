@@ -156,7 +156,12 @@ pub struct Agent {
     container: Mutex<Option<Container>>,
     /// Counts user turns since last background memory review (resets after firing).
     pub(super) turns_since_memory_review: std::sync::atomic::AtomicU32,
-    background_tasks: Mutex<Vec<JoinHandle<()>>>,
+    background_tasks: Mutex<Vec<BackgroundTask>>,
+}
+
+struct BackgroundTask {
+    handle: JoinHandle<()>,
+    wait_on_close: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -260,30 +265,50 @@ impl Agent {
         }
     }
 
-    async fn register_background_task(&self, handle: JoinHandle<()>) {
-        self.background_tasks.lock().await.push(handle);
+    async fn register_background_task(&self, handle: JoinHandle<()>, wait_on_close: bool) {
+        let mut background_tasks = self.background_tasks.lock().await;
+        background_tasks.push(BackgroundTask {
+            handle,
+            wait_on_close,
+        });
+        tracing::debug!(
+            task_count = background_tasks.len(),
+            wait_on_close,
+            "registered background task"
+        );
     }
 
     pub async fn drain_background_tasks(&self) {
+        tracing::debug!("starting background task drain");
         loop {
-            let handles = {
+            let tasks = {
                 let mut background_tasks = self.background_tasks.lock().await;
                 if background_tasks.is_empty() {
                     break;
                 }
+                tracing::debug!(
+                    task_count = background_tasks.len(),
+                    "draining background task batch"
+                );
                 std::mem::take(&mut *background_tasks)
             };
 
-            for handle in handles {
-                if let Err(e) = handle.await {
-                    warn!("Background task failed to join: {}", e);
+            let mut awaited = 0usize;
+            let mut aborted = 0usize;
+            for task in tasks {
+                if task.wait_on_close {
+                    awaited += 1;
+                    if let Err(e) = task.handle.await {
+                        warn!("Background task failed to join: {}", e);
+                    }
+                } else {
+                    aborted += 1;
+                    task.handle.abort();
                 }
             }
+            tracing::debug!(awaited, aborted, "finished background task batch");
         }
-    }
-
-    pub async fn close_extensions(&self) {
-        self.extension_manager.close_all_clients().await;
+        tracing::debug!("finished background task drain");
     }
 
     /// Create a tool inspection manager with default inspectors
@@ -1242,7 +1267,8 @@ impl Agent {
                     warn!("Failed to generate session description: {}", e);
                 }
             });
-            self.register_background_task(handle).await;
+            tracing::debug!("registering session naming background task");
+            self.register_background_task(handle, false).await;
         }
 
         // Count tool calls present before this reply so we only summarize
@@ -1266,6 +1292,7 @@ impl Agent {
             let mut compaction_attempts = 0;
             let mut last_assistant_text = String::new();
             let mut tool_iterations_this_reply = 0u32;
+            let mut tool_requests_this_reply = 0u32;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -1381,6 +1408,7 @@ impl Agent {
                                 }
 
                                 tool_iterations_this_reply += 1;
+                                tool_requests_this_reply += num_tool_requests as u32;
 
                                 let mut request_to_response_map = HashMap::new();
                                 let mut request_metadata: HashMap<String, Option<ProviderMetadata>> = HashMap::new();
@@ -1844,13 +1872,25 @@ impl Agent {
 
             // Spawn background knowledge review if triggers are met
             // Memory review: fires after N user turns (resets after firing)
-            // Skill review: fires after N tool iterations in this reply (complex work)
+            // Skill review: fires after enough tool activity in this reply (complex work)
             let turns_since = self.turns_since_memory_review.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
             let should_review_memory =
                 turns_since >= super::knowledge_review::DEFAULT_MEMORY_REVIEW_INTERVAL;
             let skill_review_threshold =
                 super::knowledge_review::resolve_skill_review_iterations();
-            let should_review_skills = tool_iterations_this_reply >= skill_review_threshold;
+            let tool_activity_this_reply =
+                std::cmp::max(tool_iterations_this_reply, tool_requests_this_reply);
+            let should_review_skills = tool_activity_this_reply >= skill_review_threshold;
+            tracing::debug!(
+                tool_iterations_this_reply,
+                tool_requests_this_reply,
+                tool_activity_this_reply,
+                skill_review_threshold,
+                should_review_memory,
+                should_review_skills,
+                adaptive_memory = false,
+                "evaluated background review trigger"
+            );
 
             // Only run background reviews if adaptive_memory is actually enabled
             let adaptive_memory_enabled = self.extension_manager
@@ -1858,6 +1898,16 @@ impl Agent {
                     crate::agents::platform_extensions::adaptive_memory::EXTENSION_NAME,
                 )
                 .await;
+            tracing::debug!(
+                tool_iterations_this_reply,
+                tool_requests_this_reply,
+                tool_activity_this_reply,
+                skill_review_threshold,
+                should_review_memory,
+                should_review_skills,
+                adaptive_memory = adaptive_memory_enabled,
+                "background review trigger after extension check"
+            );
 
             if adaptive_memory_enabled && (should_review_memory || should_review_skills) {
                 if should_review_memory {
@@ -1880,7 +1930,12 @@ impl Agent {
                             review_memory,
                             should_review_skills,
                         );
-                        self.register_background_task(handle).await;
+                        tracing::debug!(
+                            review_memory,
+                            review_skills = should_review_skills,
+                            "registering background review task"
+                        );
+                        self.register_background_task(handle, true).await;
                     }
                 }
             }
@@ -2501,7 +2556,7 @@ mod tests {
             notify_clone.notified().await;
             completed_clone.store(true, Ordering::SeqCst);
         });
-        agent.register_background_task(handle).await;
+        agent.register_background_task(handle, true).await;
 
         let drain = agent.drain_background_tasks();
         tokio::pin!(drain);
