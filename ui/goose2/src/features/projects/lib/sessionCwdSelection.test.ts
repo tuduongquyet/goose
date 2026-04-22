@@ -25,9 +25,6 @@ function makeProject(overrides: Partial<ProjectInfo> = {}): ProjectInfo {
     useWorktrees: false,
     order: 0,
     archivedAt: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    artifactsDir: "",
     ...overrides,
   };
 }
@@ -42,46 +39,24 @@ describe("sessionCwdSelection", () => {
       resolveProjectDefaultArtifactRoot(
         makeProject({
           workingDirs: ["/Users/wesb/dev/goose2", "/Users/wesb/dev/other"],
-          artifactsDir: "/Users/wesb/.goose/projects/goose2/artifacts",
         }),
       ),
     ).toBe("/Users/wesb/dev/goose2/artifacts");
   });
 
-  it("falls back to the stored project artifact root when no workspace roots exist", () => {
+  it("returns undefined when no workspace roots exist", () => {
     expect(
-      resolveProjectDefaultArtifactRoot(
-        makeProject({
-          workingDirs: [],
-          artifactsDir: "/Users/wesb/.goose/projects/sample-project/artifacts",
-        }),
-      ),
-    ).toBe("/Users/wesb/.goose/projects/sample-project/artifacts");
-  });
-
-  it("returns undefined for a pathless project artifact root", () => {
-    expect(
-      resolveProjectDefaultArtifactRoot(
-        makeProject({
-          workingDirs: [],
-          artifactsDir: "   ",
-        }),
-      ),
+      resolveProjectDefaultArtifactRoot(makeProject({ workingDirs: [] })),
     ).toBeUndefined();
   });
 
-  it("falls back to global artifacts for a pathless project session cwd", async () => {
+  it("falls back to global artifacts for a project without working dirs", async () => {
     vi.mocked(resolvePath).mockResolvedValue({
       path: "/Users/wesb/.goose/artifacts",
     });
 
     await expect(
-      resolveSessionCwd(
-        makeProject({
-          workingDirs: [],
-          artifactsDir: "   ",
-        }),
-      ),
+      resolveSessionCwd(makeProject({ workingDirs: [] })),
     ).resolves.toBe("/Users/wesb/.goose/artifacts");
 
     expect(resolvePath).toHaveBeenCalledWith({

@@ -374,6 +374,17 @@ export type UnarchiveSessionRequest = {
 };
 
 /**
+ * Set or clear the project associated with a session.
+ */
+export type SetSessionProjectRequest = {
+    sessionId: string;
+    /**
+     * The source name (kebab-case ID) of the project, or null to clear.
+     */
+    projectId?: string | null;
+};
+
+/**
  * Create a new source (global or project-scoped).
  */
 export type CreateSourceRequest = {
@@ -386,12 +397,24 @@ export type CreateSourceRequest = {
      * Absolute path to the project root. Required when `global` is false.
      */
     projectDir?: string | null;
+    /**
+     * Project source ID. When set with `global: false`, the backend resolves
+     * the project's first working directory automatically. Takes precedence
+     * over `project_dir`.
+     */
+    projectId?: string | null;
+    /**
+     * Arbitrary key/value metadata.
+     */
+    properties?: {
+        [key: string]: unknown;
+    };
 };
 
 /**
  * The type of source entity.
  */
-export type SourceType = 'skill';
+export type SourceType = 'skill' | 'project';
 
 export type CreateSourceResponse = {
     source: SourceEntry;
@@ -415,6 +438,13 @@ export type SourceEntry = {
      * when it lives inside a specific project.
      */
     global: boolean;
+    /**
+     * Arbitrary key/value pairs for type-specific metadata (e.g. icon, color,
+     * preferredProvider for projects). Stored in the frontmatter.
+     */
+    properties?: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -424,6 +454,11 @@ export type SourceEntry = {
 export type ListSourcesRequest = {
     type?: SourceType | null;
     projectDir?: string | null;
+    /**
+     * When true, also scan the working directories of all known projects for
+     * project-scoped sources (e.g. skills stored under `{workingDir}/.agents/skills/`).
+     */
+    includeProjectSources?: boolean;
 };
 
 export type ListSourcesResponse = {
@@ -440,6 +475,12 @@ export type UpdateSourceRequest = {
     content: string;
     global: boolean;
     projectDir?: string | null;
+    /**
+     * Arbitrary key/value metadata. Replaces all existing properties.
+     */
+    properties?: {
+        [key: string]: unknown;
+    };
 };
 
 export type UpdateSourceResponse = {
@@ -626,7 +667,7 @@ export type DictationModelSelectRequest = {
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | RefreshProviderInventoryRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | RefreshProviderInventoryRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | ArchiveSessionRequest | UnarchiveSessionRequest | SetSessionProjectRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };

@@ -206,6 +206,16 @@ pub struct UnarchiveSessionRequest {
     pub session_id: String,
 }
 
+/// Set or clear the project associated with a session.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/session/set_project", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSessionProjectRequest {
+    pub session_id: String,
+    /// The source name (kebab-case ID) of the project, or null to clear.
+    pub project_id: Option<String>,
+}
+
 /// Export a session as a JSON string.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_goose/session/export", response = ExportSessionResponse)]
@@ -259,6 +269,7 @@ pub struct ProviderConfigKey {
 pub enum SourceType {
     #[default]
     Skill,
+    Project,
 }
 
 /// A source — a user-editable entity backed by an on-disk directory. Sources
@@ -276,6 +287,10 @@ pub struct SourceEntry {
     /// True when the source lives in the user's global sources directory; false
     /// when it lives inside a specific project.
     pub global: bool,
+    /// Arbitrary key/value pairs for type-specific metadata (e.g. icon, color,
+    /// preferredProvider for projects). Stored in the frontmatter.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub properties: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// Create a new source (global or project-scoped).
@@ -292,6 +307,14 @@ pub struct CreateSourceRequest {
     /// Absolute path to the project root. Required when `global` is false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,
+    /// Project source ID. When set with `global: false`, the backend resolves
+    /// the project's first working directory automatically. Takes precedence
+    /// over `project_dir`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    /// Arbitrary key/value metadata.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub properties: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
@@ -310,6 +333,10 @@ pub struct ListSourcesRequest {
     pub source_type: Option<SourceType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,
+    /// When true, also scan the working directories of all known projects for
+    /// project-scoped sources (e.g. skills stored under `{workingDir}/.agents/skills/`).
+    #[serde(default)]
+    pub include_project_sources: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
@@ -331,6 +358,9 @@ pub struct UpdateSourceRequest {
     pub global: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,
+    /// Arbitrary key/value metadata. Replaces all existing properties.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub properties: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]

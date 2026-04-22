@@ -181,6 +181,7 @@ describe("CreateSkillDialog", () => {
         "my-skill",
         "A description",
         "Some instructions",
+        { projectId: undefined },
       );
     });
 
@@ -210,6 +211,7 @@ describe("CreateSkillDialog", () => {
         "code-review",
         "Updated description",
         "Review carefully",
+        { projectDir: undefined },
       );
     });
 

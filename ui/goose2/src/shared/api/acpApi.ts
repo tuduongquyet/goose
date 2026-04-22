@@ -34,8 +34,11 @@ export async function listProviders(): Promise<AcpProvider[]> {
   });
 
   const providers = result.entries
-    .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
-    .map((entry) => ({
+    .filter(
+      (entry: { providerId: string }) =>
+        !DEPRECATED_PROVIDER_IDS.has(entry.providerId),
+    )
+    .map((entry: { providerId: string; providerName: string }) => ({
       id: entry.providerId,
       label: entry.providerName,
     }));
@@ -195,4 +198,15 @@ export async function prompt(
 ): Promise<PromptResponse> {
   const client = await getClient();
   return client.prompt({ sessionId, prompt: content });
+}
+
+export async function setSessionProject(
+  sessionId: string,
+  projectId: string | null,
+): Promise<void> {
+  const client = await getClient();
+  await client.extMethod("_goose/session/set_project", {
+    sessionId,
+    projectId,
+  });
 }

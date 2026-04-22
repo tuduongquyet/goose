@@ -11,7 +11,6 @@ import { useProviderSelection } from "@/features/agents/hooks/useProviderSelecti
 import { useProjectStore } from "@/features/projects/stores/projectStore";
 import { resolveAgentProviderCatalogIdStrict } from "@/features/providers/providerCatalog";
 import {
-  buildProjectSystemPrompt,
   composeSystemPrompt,
   getProjectArtifactRoots,
   resolveProjectDefaultArtifactRoot,
@@ -28,6 +27,7 @@ import {
   useResolvedAgentModelPicker,
   type PreferredModelSelection,
 } from "./useResolvedAgentModelPicker";
+import { setSessionProject } from "@/shared/api/acpApi";
 
 interface UseChatSessionControllerOptions {
   sessionId: string | null;
@@ -132,22 +132,14 @@ export function useChatSessionController({
         })),
     [projects],
   );
-  const projectSystemPrompt = useMemo(
-    () => buildProjectSystemPrompt(project),
-    [project],
-  );
   const workingContextPrompt = useMemo(() => {
     if (!activeWorkspace?.branch) return undefined;
     return `<active-working-context>\nActive branch: ${activeWorkspace.branch}\nWorking directory: ${activeWorkspace.path}\n</active-working-context>`;
   }, [activeWorkspace?.branch, activeWorkspace?.path]);
   const effectiveSystemPrompt = useMemo(
     () =>
-      composeSystemPrompt(
-        selectedPersona?.systemPrompt,
-        projectSystemPrompt,
-        workingContextPrompt,
-      ),
-    [projectSystemPrompt, selectedPersona?.systemPrompt, workingContextPrompt],
+      composeSystemPrompt(selectedPersona?.systemPrompt, workingContextPrompt),
+    [selectedPersona?.systemPrompt, workingContextPrompt],
   );
 
   const prepareCurrentSession = useCallback(
@@ -165,7 +157,10 @@ export function useChatSessionController({
         nextProject,
         nextWorkspacePath,
       );
-      await acpPrepareSession(sessionId, providerId, workingDir, { personaId });
+      await acpPrepareSession(sessionId, providerId, workingDir, {
+        personaId,
+        projectId: nextProject?.id,
+      });
       if (!modelSelection?.id) {
         return;
       }
@@ -303,6 +298,9 @@ export function useChatSessionController({
             null);
 
       useChatSessionStore.getState().updateSession(sessionId, { projectId });
+
+      void setSessionProject(sessionId, projectId).catch(console.error);
+
       if (!selectedProvider) {
         return;
       }
@@ -656,6 +654,9 @@ export function useChatSessionController({
         }
         if (hasPendingProject) {
           patch.projectId = nextProjectId ?? null;
+          void setSessionProject(sessionId, nextProjectId ?? null).catch(
+            console.error,
+          );
         }
 
         useChatSessionStore.getState().updateSession(sessionId, patch);

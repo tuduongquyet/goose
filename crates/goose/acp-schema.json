@@ -717,6 +717,27 @@
       "x-side": "agent",
       "x-method": "_goose/session/unarchive"
     },
+    "SetSessionProjectRequest": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The source name (kebab-case ID) of the project, or null to clear."
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Set or clear the project associated with a session.",
+      "x-side": "agent",
+      "x-method": "_goose/session/set_project"
+    },
     "CreateSourceRequest": {
       "type": "object",
       "properties": {
@@ -741,6 +762,18 @@
             "null"
           ],
           "description": "Absolute path to the project root. Required when `global` is false."
+        },
+        "projectId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Project source ID. When set with `global: false`, the backend resolves\nthe project's first working directory automatically. Takes precedence\nover `project_dir`."
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {},
+          "description": "Arbitrary key/value metadata."
         }
       },
       "required": [
@@ -757,7 +790,8 @@
     "SourceType": {
       "type": "string",
       "enum": [
-        "skill"
+        "skill",
+        "project"
       ],
       "description": "The type of source entity."
     },
@@ -796,6 +830,11 @@
         "global": {
           "type": "boolean",
           "description": "True when the source lives in the user's global sources directory; false\nwhen it lives inside a specific project."
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {},
+          "description": "Arbitrary key/value pairs for type-specific metadata (e.g. icon, color,\npreferredProvider for projects). Stored in the frontmatter."
         }
       },
       "required": [
@@ -826,6 +865,11 @@
             "string",
             "null"
           ]
+        },
+        "includeProjectSources": {
+          "type": "boolean",
+          "description": "When true, also scan the working directories of all known projects for\nproject-scoped sources (e.g. skills stored under `{workingDir}/.agents/skills/`).",
+          "default": false
         }
       },
       "description": "List sources. If `type` is omitted, sources of all known types are returned.\nBoth global and project-scoped sources are included when `project_dir` is set.",
@@ -871,6 +915,11 @@
             "string",
             "null"
           ]
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {},
+          "description": "Arbitrary key/value metadata. Replaces all existing properties."
         }
       },
       "required": [
@@ -1533,6 +1582,15 @@
                   ],
                   "description": "Params for _goose/session/unarchive",
                   "title": "UnarchiveSessionRequest"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/SetSessionProjectRequest"
+                    }
+                  ],
+                  "description": "Params for _goose/session/set_project",
+                  "title": "SetSessionProjectRequest"
                 },
                 {
                   "allOf": [

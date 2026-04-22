@@ -319,9 +319,20 @@ export const zUnarchiveSessionRequest = z.object({
 });
 
 /**
+ * Set or clear the project associated with a session.
+ */
+export const zSetSessionProjectRequest = z.object({
+    sessionId: z.string(),
+    projectId: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
  * The type of source entity.
  */
-export const zSourceType = z.enum(['skill']);
+export const zSourceType = z.enum(['skill', 'project']);
 
 /**
  * Create a new source (global or project-scoped).
@@ -335,7 +346,12 @@ export const zCreateSourceRequest = z.object({
     projectDir: z.union([
         z.string(),
         z.null()
-    ]).optional()
+    ]).optional(),
+    projectId: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    properties: z.record(z.unknown()).optional()
 });
 
 /**
@@ -348,7 +364,8 @@ export const zSourceEntry = z.object({
     description: z.string(),
     content: z.string(),
     directory: z.string(),
-    global: z.boolean()
+    global: z.boolean(),
+    properties: z.record(z.unknown()).optional()
 });
 
 export const zCreateSourceResponse = z.object({
@@ -367,7 +384,8 @@ export const zListSourcesRequest = z.object({
     projectDir: z.union([
         z.string(),
         z.null()
-    ]).optional()
+    ]).optional(),
+    includeProjectSources: z.boolean().optional().default(false)
 });
 
 export const zListSourcesResponse = z.object({
@@ -386,7 +404,8 @@ export const zUpdateSourceRequest = z.object({
     projectDir: z.union([
         z.string(),
         z.null()
-    ]).optional()
+    ]).optional(),
+    properties: z.record(z.unknown()).optional()
 });
 
 export const zUpdateSourceResponse = z.object({
@@ -608,6 +627,7 @@ export const zExtRequest = z.object({
             zUpdateSessionProjectRequest,
             zArchiveSessionRequest,
             zUnarchiveSessionRequest,
+            zSetSessionProjectRequest,
             zCreateSourceRequest,
             zListSourcesRequest,
             zUpdateSourceRequest,

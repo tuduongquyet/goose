@@ -93,7 +93,7 @@ export class GooseClient {
   }
 
   listSessions(params: ListSessionsRequest): Promise<ListSessionsResponse> {
-    return this.conn.listSessions(params);
+    return this.conn.unstable_listSessions(params);
   }
 
   unstable_resumeSession(

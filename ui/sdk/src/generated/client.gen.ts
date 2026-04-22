@@ -55,6 +55,7 @@ import type {
   RemoveConfigRequest,
   RemoveExtensionRequest,
   RemoveSecretRequest,
+  SetSessionProjectRequest,
   UnarchiveSessionRequest,
   UpdateSessionProjectRequest,
   UpdateSourceRequest,
@@ -207,6 +208,12 @@ export class GooseExtClient {
 
   async GooseSessionUnarchive(params: UnarchiveSessionRequest): Promise<void> {
     await this.conn.extMethod("_goose/session/unarchive", params);
+  }
+
+  async GooseSessionSetProject(
+    params: SetSessionProjectRequest,
+  ): Promise<void> {
+    await this.conn.extMethod("_goose/session/set_project", params);
   }
 
   async GooseSourcesCreate(

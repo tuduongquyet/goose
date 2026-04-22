@@ -5,12 +5,16 @@
     "description": "Description",
     "descriptionPlaceholder": "What it does and when to use it...",
     "editTitle": "Edit Skill",
+    "global": "Global",
+    "globalHint": "Available to all sessions",
     "instructions": "Instructions",
     "instructionsPlaceholder": "Markdown instructions the agent will follow...",
     "name": "Name",
     "namePlaceholder": "my-skill-name",
     "nameValidation": "Must be kebab-case (e.g. code-review)",
     "newTitle": "New Skill",
+    "projectHint": "Stored in the project folder",
+    "saveLocation": "Save to",
     "saving": "Saving..."
   },
   "view": {

@@ -22,11 +22,6 @@ function buildSessionCwdParts(
     return [workingDirs[0], "artifacts"];
   }
 
-  const artifactRoot = trimValue(project?.artifactsDir);
-  if (artifactRoot) {
-    return [artifactRoot];
-  }
-
   return ["~", ".goose", "artifacts"];
 }
 

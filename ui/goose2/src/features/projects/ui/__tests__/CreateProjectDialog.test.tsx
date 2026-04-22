@@ -96,6 +96,8 @@ function makeEditingProject(overrides: Record<string, unknown> = {}) {
     preferredModel: null,
     workingDirs: ["/home/user/code"],
     useWorktrees: false,
+    order: 0,
+    archivedAt: null,
     ...overrides,
   };
 }

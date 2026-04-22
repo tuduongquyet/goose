@@ -3185,18 +3185,45 @@ impl GooseAcpAgent {
         Ok(EmptyResponse {})
     }
 
+    #[custom_method(SetSessionProjectRequest)]
+    async fn on_set_session_project(
+        &self,
+        req: SetSessionProjectRequest,
+    ) -> Result<EmptyResponse, sacp::Error> {
+        let thread_id = req.session_id.clone();
+        let project_id = req.project_id.clone();
+        self.update_thread_metadata(&thread_id, move |meta| {
+            meta.project_id = project_id;
+        })
+        .await?;
+        Ok(EmptyResponse {})
+    }
+
     #[custom_method(CreateSourceRequest)]
     async fn on_create_source(
         &self,
         req: CreateSourceRequest,
     ) -> Result<CreateSourceResponse, sacp::Error> {
+        let project_dir = match (&req.project_id, &req.project_dir) {
+            (Some(pid), _) if !req.global => {
+                let dirs = crate::sources::project_working_dirs(pid);
+                Some(dirs.into_iter().next().ok_or_else(|| {
+                    sacp::Error::invalid_params().data(format!(
+                        "Project \"{pid}\" has no working directories configured"
+                    ))
+                })?)
+            }
+            (_, Some(pd)) => Some(pd.clone()),
+            _ => None,
+        };
         let source = crate::sources::create_source(
             req.source_type,
             &req.name,
             &req.description,
             &req.content,
             req.global,
-            req.project_dir.as_deref(),
+            project_dir.as_deref(),
+            req.properties,
         )?;
         Ok(CreateSourceResponse { source })
     }
@@ -3206,7 +3233,11 @@ impl GooseAcpAgent {
         &self,
         req: ListSourcesRequest,
     ) -> Result<ListSourcesResponse, sacp::Error> {
-        let sources = crate::sources::list_sources(req.source_type, req.project_dir.as_deref())?;
+        let sources = crate::sources::list_sources(
+            req.source_type,
+            req.project_dir.as_deref(),
+            req.include_project_sources,
+        )?;
         Ok(ListSourcesResponse { sources })
     }
 
@@ -3222,6 +3253,7 @@ impl GooseAcpAgent {
             &req.content,
             req.global,
             req.project_dir.as_deref(),
+            req.properties,
         )?;
         Ok(UpdateSourceResponse { source })
     }

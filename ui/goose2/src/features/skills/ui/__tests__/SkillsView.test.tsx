@@ -192,7 +192,9 @@ describe("SkillsView", () => {
       await user.click(screen.getByRole("button", { name: "Delete" }));
 
       await waitFor(() => {
-        expect(deleteSkill).toHaveBeenCalledWith("code-review");
+        expect(deleteSkill).toHaveBeenCalledWith("code-review", {
+          projectDir: undefined,
+        });
       });
     });
   });

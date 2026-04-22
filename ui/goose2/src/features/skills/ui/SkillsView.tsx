@@ -98,7 +98,14 @@ export function SkillsView() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<
-    { name: string; description: string; instructions: string } | undefined
+    | {
+        name: string;
+        description: string;
+        instructions: string;
+        global?: boolean;
+        projectDir?: string;
+      }
+    | undefined
   >(undefined);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,7 +136,9 @@ export function SkillsView() {
   const handleConfirmDeleteSkill = async () => {
     if (!deletingSkill) return;
     try {
-      await deleteSkill(deletingSkill.name);
+      await deleteSkill(deletingSkill.name, {
+        projectDir: deletingSkill.global ? undefined : deletingSkill.projectDir,
+      });
       await loadSkills();
     } catch {
       // best-effort
@@ -142,6 +151,8 @@ export function SkillsView() {
       name: skill.name,
       description: skill.description,
       instructions: skill.instructions,
+      global: skill.global,
+      projectDir: skill.projectDir,
     });
     setDialogOpen(true);
   };
@@ -164,7 +175,9 @@ export function SkillsView() {
 
   const handleExport = async (skill: SkillInfo) => {
     try {
-      const result = await exportSkill(skill.name);
+      const result = await exportSkill(skill.name, {
+        projectDir: skill.global ? undefined : skill.projectDir,
+      });
       const blob = new Blob([result.json], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -293,11 +306,18 @@ export function SkillsView() {
             <div className="space-y-2">
               {filtered.map((skill) => (
                 <div
-                  key={skill.name}
+                  key={`${skill.global ? "g" : (skill.projectDir ?? "p")}-${skill.name}`}
                   className="flex items-start justify-between gap-3 rounded-lg border border-border px-4 py-3"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{skill.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{skill.name}</p>
+                      {!skill.global && skill.projectName && (
+                        <span className="inline-flex items-center rounded-full bg-accent/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          {skill.projectName}
+                        </span>
+                      )}
+                    </div>
                     {skill.description && (
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {skill.description}
