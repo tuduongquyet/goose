@@ -114,13 +114,18 @@ You are a senior engineer conducting a thorough code review. Review **only the l
 
 ### Step 0: Run Quality Checks
 
-Before reading any code, run the project's CI gate to establish a baseline:
+Before reading any code, run the project's CI gate to establish a baseline. Use **check-only** commands so the baseline never mutates the working tree — otherwise auto-formatters can introduce unstaged diffs and you'll end up reviewing formatter output instead of the author's actual changes.
+
+Avoid `just check-everything` as the baseline in this repo: that recipe runs `cargo fmt --all` in write mode and will modify the working tree. Run the non-mutating equivalents instead:
 
 ```bash
-just check-everything
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+cd ui/desktop && pnpm run lint:check
+./scripts/check-openapi-schema.sh
 ```
 
-If the project has a stronger pre-push or CI gate than this helper command, run that fuller gate when the review is meant to be PR-ready. In this repo, targeted tests for the changed area plus the pre-push checks are often the practical follow-up.
+If the project has a stronger pre-push or CI gate than this helper set, run that fuller gate when the review is meant to be PR-ready, but only after confirming it is also non-mutating (or run it from a clean stash). In this repo, targeted tests for the changed area plus the pre-push checks are often the practical follow-up.
 
 Report the results as pass/fail. Any failures are automatically **P0** issues and should appear at the top of the findings list. Do not skip this step even if the user only wants a quick review.
 
