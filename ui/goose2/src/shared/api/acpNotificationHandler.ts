@@ -207,6 +207,10 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
       const rawAnn = (update.content as any).annotations;
       const ann: TextContent["annotations"] | undefined =
         typeof rawAnn === "object" && rawAnn !== null ? rawAnn : undefined;
+      // Drop blocks whose audience does not include "user" so that
+      // assistant-only system prompt blocks never enter chat state
+      // (other consumers like getTextContent read raw message.content).
+      if (ann?.audience && !ann.audience.includes("user")) break;
       const textBlock = makeTextBlock(update.content.text, ann);
       if (!existing) {
         buffer.push({
