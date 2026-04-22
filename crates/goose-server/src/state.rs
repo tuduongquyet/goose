@@ -54,10 +54,23 @@ impl AppState {
     }
 
     #[cfg(feature = "local-inference")]
-    pub fn get_inference_runtime(&self) -> Arc<InferenceRuntime> {
-        self.inference_runtime
-            .get_or_init(InferenceRuntime::get_or_init)
-            .clone()
+    pub fn get_inference_runtime(&self) -> anyhow::Result<Arc<InferenceRuntime>> {
+        if let Some(runtime) = self.inference_runtime.get() {
+            return Ok(runtime.clone());
+        }
+
+        let runtime = InferenceRuntime::get_or_init()?;
+
+        // Another thread may win the race to cache the runtime in AppState.
+        // In that case, return the already-initialized cached runtime.
+        match self.inference_runtime.set(runtime.clone()) {
+            Ok(()) => Ok(runtime),
+            Err(_) => Ok(self
+                .inference_runtime
+                .get()
+                .expect("inference runtime initialized by another thread")
+                .clone()),
+        }
     }
 
     pub async fn set_extension_loading_task(
