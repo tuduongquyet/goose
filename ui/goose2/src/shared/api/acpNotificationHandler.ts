@@ -201,10 +201,12 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
       const messageId = update.messageId ?? crypto.randomUUID();
       const buffer = ensureReplayBuffer(sessionId);
       const existing = getBufferedMessage(sessionId, messageId);
+      // ACP SDK's ContentBlock union doesn't expose annotations on the text branch,
+      // but the wire format includes it. Guard with a runtime typeof check.
       // biome-ignore lint/suspicious/noExplicitAny: ACP SDK type narrowing
-      const ann = (update.content as any).annotations as
-        | { audience?: ("user" | "assistant")[] }
-        | undefined;
+      const rawAnn = (update.content as any).annotations;
+      const ann: { audience?: ("user" | "assistant")[] } | undefined =
+        typeof rawAnn === "object" && rawAnn !== null ? rawAnn : undefined;
       const textBlock = makeTextBlock(update.content.text, ann);
       if (!existing) {
         buffer.push({
