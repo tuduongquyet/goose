@@ -5,6 +5,9 @@ import { useLocaleFormatting } from "@/shared/i18n";
 import { MessageBubble } from "./MessageBubble";
 import { getTextContent, type Message } from "@/shared/types/messages";
 
+const AUTO_SCROLL_THRESHOLD_PX = 180;
+const MCP_APP_STICKY_SCROLL_MS = 1500;
+
 interface MessageTimelineProps {
   messages: Message[];
   streamingMessageId?: string | null;
@@ -13,6 +16,7 @@ interface MessageTimelineProps {
   onScrollTargetHandled?: (messageId: string) => void;
   onRetryMessage?: (messageId: string) => void;
   onEditMessage?: (messageId: string) => void;
+  onSendMcpAppMessage?: (text: string) => void | Promise<void>;
   className?: string;
 }
 
@@ -57,6 +61,7 @@ export function MessageTimeline({
   onScrollTargetHandled,
   onRetryMessage,
   onEditMessage,
+  onSendMcpAppMessage,
   className,
 }: MessageTimelineProps) {
   const { t } = useTranslation("chat");
@@ -65,6 +70,9 @@ export function MessageTimeline({
   const containerRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const isNearBottomRef = useRef(true);
+  const stickyScrollUntilRef = useRef(0);
+  const autoScrollTimersRef = useRef<number[]>([]);
+  const lastMcpAppSignatureRef = useRef<string | null>(null);
   const [pulsingMessageId, setPulsingMessageId] = useState<string | null>(null);
   const visibleMessages = messages.filter(
     (m) =>
@@ -96,16 +104,130 @@ export function MessageTimeline({
     return textMatch?.id ?? null;
   }, [scrollTargetMessageId, scrollTargetQuery, visibleMessages]);
 
+  const scrollToBottom = useMemo(
+    () =>
+      (behavior: ScrollBehavior = "smooth") => {
+        const container = containerRef.current;
+        if (!container) {
+          return;
+        }
+
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior,
+        });
+      },
+    [],
+  );
+
+  const scrollToBottomIfNearBottom = useMemo(
+    () =>
+      (behavior: ScrollBehavior = "smooth") => {
+        const container = containerRef.current;
+        if (!container) {
+          return;
+        }
+
+        const distanceFromBottom =
+          container.scrollHeight - container.scrollTop - container.clientHeight;
+        const stickyActive = stickyScrollUntilRef.current > performance.now();
+
+        if (
+          !isNearBottomRef.current &&
+          !stickyActive &&
+          distanceFromBottom >= AUTO_SCROLL_THRESHOLD_PX
+        ) {
+          return;
+        }
+
+        scrollToBottom(behavior);
+      },
+    [scrollToBottom],
+  );
+
+  const schedulePinnedBottomBurst = useMemo(
+    () => () => {
+      stickyScrollUntilRef.current =
+        performance.now() + MCP_APP_STICKY_SCROLL_MS;
+
+      for (const timer of autoScrollTimersRef.current) {
+        window.clearTimeout(timer);
+      }
+      autoScrollTimersRef.current = [];
+
+      const run = () => {
+        scrollToBottom("auto");
+      };
+
+      run();
+
+      for (const delay of [120, 300, 650]) {
+        const timer = window.setTimeout(() => {
+          run();
+        }, delay);
+        autoScrollTimersRef.current.push(timer);
+      }
+    },
+    [scrollToBottom],
+  );
+
+  const requestMcpAppAutoScroll = useMemo(
+    () => (element: HTMLElement | null) => {
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
+
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      const shouldStick =
+        isNearBottomRef.current ||
+        distanceFromBottom < AUTO_SCROLL_THRESHOLD_PX ||
+        stickyScrollUntilRef.current > performance.now();
+
+      if (!shouldStick) {
+        return;
+      }
+
+      if (element) {
+        stickyScrollUntilRef.current =
+          performance.now() + MCP_APP_STICKY_SCROLL_MS;
+
+        const alignElementBottom = () => {
+          const nextContainer = containerRef.current;
+          if (!nextContainer || !element.isConnected) {
+            return;
+          }
+
+          const containerRect = nextContainer.getBoundingClientRect();
+          const elementRect = element.getBoundingClientRect();
+          const delta = elementRect.bottom - containerRect.bottom + 16;
+
+          if (delta > 0) {
+            nextContainer.scrollBy({
+              top: delta,
+              behavior: "auto",
+            });
+          }
+        };
+
+        alignElementBottom();
+        requestAnimationFrame(() => {
+          alignElementBottom();
+        });
+        return;
+      }
+
+      schedulePinnedBottomBurst();
+    },
+    [schedulePinnedBottomBurst],
+  );
+
   // Use scrollTo instead of scrollIntoView to avoid scrolling parent/document-level ancestors.
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs are stable and don't need to be in deps
   useEffect(() => {
-    if (isNearBottomRef.current && containerRef.current) {
-      containerRef.current.scrollTo({
-        top: containerRef.current.scrollHeight,
-        behavior: "smooth",
-      });
-    }
-  }, [messages, streamingMessageId]);
+    scrollToBottomIfNearBottom();
+  }, [messages, scrollToBottomIfNearBottom, streamingMessageId]);
 
   useEffect(() => {
     if (!resolvedScrollTargetMessageId) {
@@ -143,11 +265,54 @@ export function MessageTimeline({
     return () => window.clearTimeout(timer);
   }, [pulsingMessageId]);
 
+  useEffect(
+    () => () => {
+      for (const timer of autoScrollTimersRef.current) {
+        window.clearTimeout(timer);
+      }
+      autoScrollTimersRef.current = [];
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const lastMessage = visibleMessages.at(-1);
+    if (!lastMessage || lastMessage.role !== "assistant") {
+      lastMcpAppSignatureRef.current = null;
+      return;
+    }
+
+    const mcpAppCount = lastMessage.content.filter(
+      (block) => block.type === "mcpApp",
+    ).length;
+    if (mcpAppCount === 0) {
+      lastMcpAppSignatureRef.current = null;
+      return;
+    }
+
+    const signature = `${lastMessage.id}:${mcpAppCount}:${lastMessage.content.length}`;
+    if (lastMcpAppSignatureRef.current === signature) {
+      return;
+    }
+    lastMcpAppSignatureRef.current = signature;
+
+    if (
+      isNearBottomRef.current ||
+      stickyScrollUntilRef.current > performance.now()
+    ) {
+      schedulePinnedBottomBurst();
+    }
+  }, [schedulePinnedBottomBurst, visibleMessages]);
+
   const handleScroll = () => {
     const container = containerRef.current;
     if (!container) return;
     const { scrollTop, scrollHeight, clientHeight } = container;
-    isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    isNearBottomRef.current = distanceFromBottom < AUTO_SCROLL_THRESHOLD_PX;
+    if (distanceFromBottom >= AUTO_SCROLL_THRESHOLD_PX) {
+      stickyScrollUntilRef.current = 0;
+    }
   };
 
   if (visibleMessages.length === 0) {
@@ -214,6 +379,8 @@ export function MessageTimeline({
                 onEditMessage={
                   message.role === "user" ? onEditMessage : undefined
                 }
+                onSendMcpAppMessage={onSendMcpAppMessage}
+                onMcpAppAutoScroll={requestMcpAppAutoScroll}
               />
             </div>
           );

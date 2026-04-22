@@ -16,6 +16,7 @@ import type {
 import type { AcpNotificationHandler } from "./acpConnection";
 import {
   attachMcpAppPayload,
+  extractToolStructuredContent,
   extractToolResultText,
   findReplayMessageWithToolCall,
 } from "./acpToolCallContent";
@@ -122,6 +123,12 @@ export function clearReplayPerf(sessionId: string): void {
   replayPerf.delete(sessionId);
 }
 
+function getChunkMessageId(update: SessionUpdate): string | null {
+  return "messageId" in update && typeof update.messageId === "string"
+    ? update.messageId
+    : null;
+}
+
 function handleReplay(
   sessionId: string,
   gooseSessionId: string,
@@ -131,7 +138,7 @@ function handleReplay(
     case "agent_message_chunk": {
       const msg = ensureReplayAssistantMessage(
         sessionId,
-        update.messageId ?? null,
+        getChunkMessageId(update),
       );
       if (msg && update.content.type === "text" && "text" in update.content) {
         const last = msg.content[msg.content.length - 1];
@@ -146,7 +153,7 @@ function handleReplay(
 
     case "user_message_chunk": {
       clearReplayAssistantMessage(sessionId);
-      const messageId = update.messageId ?? crypto.randomUUID();
+      const messageId = getChunkMessageId(update) ?? crypto.randomUUID();
       const buffer = ensureReplayBuffer(sessionId);
       const existing = getBufferedMessage(sessionId, messageId);
       if (
@@ -224,6 +231,7 @@ function handleReplay(
             id: update.toolCallId,
             name: (tc as ToolRequestContent)?.name ?? "",
             result: resultText,
+            structuredContent: extractToolStructuredContent(update),
             isError: update.status === "failed",
           });
           if (update.status === "completed") {
@@ -267,7 +275,7 @@ function handleLive(
       const messageId = ensureLiveAssistantMessage(
         sessionId,
         gooseSessionId,
-        update.messageId,
+        getChunkMessageId(update) ?? undefined,
       );
 
       if (update.content.type === "text" && "text" in update.content) {
@@ -330,6 +338,7 @@ function handleLive(
           id: update.toolCallId,
           name: toolRequest?.name ?? "",
           result: resultText,
+          structuredContent: extractToolStructuredContent(update),
           isError: update.status === "failed",
         };
         store.setStreamingMessageId(sessionId, messageId);
@@ -341,6 +350,9 @@ function handleLive(
             toolRequest?.name ?? update.title ?? "",
             update,
             false,
+            {
+              gooseSessionId,
+            },
           );
         }
       }

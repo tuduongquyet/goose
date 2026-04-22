@@ -1092,7 +1092,9 @@ async fn handle_serve_command(host: String, port: u16, builtins: Vec<String>) ->
         config_dir: Paths::config_dir(),
         goose_platform,
     }));
-    let router = create_router(server);
+    let secret_key =
+        std::env::var("GOOSE_SERVER__SECRET_KEY").unwrap_or_else(|_| "goose-acp-local".into());
+    let router = create_router(server, secret_key);
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     info!("Starting ACP server on {}", addr);

@@ -126,7 +126,9 @@
   "message": {
     "copied": "Copiado",
     "defaultImageAlt": "Adjunto",
-    "mcpAppUnderConstruction": "🚧 La renderización de MCP App está en construcción",
+    "mcpApp": "MCP App",
+    "mcpAppLoading": "Cargando MCP App…",
+    "mcpAppRenderError": "No se pudo renderizar MCP App en línea.",
     "redactedThinking": "(pensamiento redactado)"
   },
   "persona": {

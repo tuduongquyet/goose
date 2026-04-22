@@ -26,13 +26,14 @@ use crate::providers::base::Provider;
 use crate::providers::inventory::{
     ProviderInventoryEntry, ProviderInventoryService, RefreshSkipReason,
 };
+use crate::agents::reply_parts::is_tool_visible_to_app;
 use crate::session::session_manager::SessionType;
 use crate::session::{EnabledExtensionsState, Session, SessionManager};
 use anyhow::Result;
 use fs_err as fs;
 use futures::future::BoxFuture;
 use goose_acp_macros::custom_methods;
-use rmcp::model::{CallToolResult, RawContent, ResourceContents, Role};
+use rmcp::model::{CallToolRequestParams, CallToolResult, RawContent, ResourceContents, Role};
 use sacp::schema::{
     AgentCapabilities, AuthMethod, AuthMethodAgent, AuthenticateRequest, AuthenticateResponse,
     BlobResourceContents, CancelNotification, CloseSessionRequest, CloseSessionResponse,
@@ -1410,7 +1411,8 @@ impl GooseAcpAgent {
             .is_ok_and(|r| r.is_acp_aware())
         {
             let content = build_tool_call_content(&tool_response.tool_result);
-            fields = fields.content(content);
+            let raw_output = build_tool_call_raw_output(&tool_response.tool_result);
+            fields = fields.content(content).raw_output(raw_output);
 
             let locations = extract_locations_from_meta(tool_response).unwrap_or_else(|| {
                 if let Some(tool_request) = session.tool_requests.get(&tool_response.id) {
@@ -1571,6 +1573,15 @@ fn build_tool_call_content(tool_result: &ToolResult<CallToolResult>) -> Vec<Tool
             })
             .collect(),
         Err(_) => Vec::new(),
+    }
+}
+
+fn build_tool_call_raw_output(
+    tool_result: &ToolResult<CallToolResult>,
+) -> Option<serde_json::Value> {
+    match tool_result {
+        Ok(result) => result.structured_content.clone(),
+        Err(_) => None,
     }
 }
 
@@ -1981,7 +1992,8 @@ impl GooseAcpAgent {
                             .is_ok_and(|r| r.is_acp_aware())
                         {
                             let content = build_tool_call_content(&tool_response.tool_result);
-                            fields = fields.content(content);
+                            let raw_output = build_tool_call_raw_output(&tool_response.tool_result);
+                            fields = fields.content(content).raw_output(raw_output);
 
                             let locations = extract_locations_from_meta(tool_response)
                                 .unwrap_or_else(|| {
@@ -2794,6 +2806,63 @@ impl GooseAcpAgent {
             .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
         Ok(ReadResourceResponse {
             result: result_json,
+        })
+    }
+
+    #[custom_method(GooseToolCallRequest)]
+    async fn on_call_tool(
+        &self,
+        req: GooseToolCallRequest,
+    ) -> Result<GooseToolCallResponse, sacp::Error> {
+        let internal_id = self.internal_session_id(&req.session_id).await?;
+        let agent = self.get_session_agent(&req.session_id, None).await?;
+        let tools = agent.list_tools(&internal_id, None).await;
+
+        if let Some(tool) = tools.iter().find(|t| *t.name == req.name) {
+            if !is_tool_visible_to_app(tool) {
+                return Err(
+                    sacp::Error::invalid_params().data("tool is not visible to app clients")
+                );
+            }
+        }
+
+        let arguments = match req.arguments {
+            serde_json::Value::Object(map) => Some(map),
+            _ => None,
+        };
+
+        let tool_call = {
+            let mut params = CallToolRequestParams::new(req.name);
+            if let Some(args) = arguments {
+                params = params.with_arguments(args);
+            }
+            params
+        };
+
+        let ctx = goose::agents::ToolCallContext::new(internal_id, None, None);
+        let tool_result = agent
+            .extension_manager
+            .dispatch_tool_call(&ctx, tool_call, CancellationToken::new())
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        let result = tool_result
+            .result
+            .await
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        let content = result
+            .content
+            .into_iter()
+            .map(serde_json::to_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?;
+
+        Ok(GooseToolCallResponse {
+            content,
+            structured_content: result.structured_content,
+            is_error: result.is_error.unwrap_or(false),
+            meta: result.meta.and_then(|m| serde_json::to_value(m).ok()),
         })
     }
 
@@ -4346,6 +4415,18 @@ print(\"hello, world\")
         }
     }
 
+    fn response_with_structured_content(
+        structured_content: Option<serde_json::Value>,
+    ) -> ToolResponse {
+        let mut result = CallToolResult::success(vec![RmcpContent::text("tool text")]);
+        result.structured_content = structured_content;
+        ToolResponse {
+            id: "req_1".to_string(),
+            tool_result: Ok(result),
+            metadata: None,
+        }
+    }
+
     #[test_case(
         response_with_meta(Some(serde_json::json!({"tool_locations": [{"path": "/tmp/f.txt", "line": 5}]})))
         => Some(vec![(PathBuf::from("/tmp/f.txt"), Some(5))])
@@ -4445,6 +4526,20 @@ print(\"hello, world\")
         let usage = build_usage_update(&session, 258_000);
         assert_eq!(usage.used, 0);
         assert_eq!(usage.size, 258_000);
+    }
+
+    #[test_case(
+        response_with_structured_content(Some(serde_json::json!({"mediaType": "audio", "timestamp": "2026-04-21T09:07:00Z"})))
+        => Some(serde_json::json!({"mediaType": "audio", "timestamp": "2026-04-21T09:07:00Z"}))
+        ; "structured content becomes raw output"
+    )]
+    #[test_case(
+        response_with_structured_content(None)
+        => None
+        ; "missing structured content stays absent"
+    )]
+    fn test_build_tool_call_raw_output(response: ToolResponse) -> Option<serde_json::Value> {
+        build_tool_call_raw_output(&response.tool_result)
     }
 
     #[test_case(

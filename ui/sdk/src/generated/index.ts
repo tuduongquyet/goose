@@ -24,6 +24,11 @@ export const GOOSE_EXT_METHODS = [
     responseType: "ReadResourceResponse",
   },
   {
+    method: "_goose/tool/call",
+    requestType: "GooseToolCallRequest",
+    responseType: "GooseToolCallResponse",
+  },
+  {
     method: "_goose/working_dir/update",
     requestType: "UpdateWorkingDirRequest",
     responseType: "EmptyResponse",

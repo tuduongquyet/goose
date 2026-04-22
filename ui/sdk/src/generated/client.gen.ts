@@ -38,6 +38,8 @@ import type {
   GetSessionExtensionsResponse,
   GetToolsRequest,
   GetToolsResponse,
+  GooseToolCallRequest,
+  GooseToolCallResponse,
   ImportSessionRequest,
   ImportSessionResponse,
   ImportSourcesRequest,
@@ -75,6 +77,7 @@ import {
   zGetExtensionsResponse,
   zGetSessionExtensionsResponse,
   zGetToolsResponse,
+  zGooseToolCallResponse,
   zImportSessionResponse,
   zImportSourcesResponse,
   zListProvidersResponse,
@@ -106,6 +109,13 @@ export class GooseExtClient {
   ): Promise<ReadResourceResponse> {
     const raw = await this.conn.extMethod("_goose/resource/read", params);
     return zReadResourceResponse.parse(raw) as ReadResourceResponse;
+  }
+
+  async GooseToolCall(
+    params: GooseToolCallRequest,
+  ): Promise<GooseToolCallResponse> {
+    const raw = await this.conn.extMethod("_goose/tool/call", params);
+    return zGooseToolCallResponse.parse(raw) as GooseToolCallResponse;
   }
 
   async GooseWorkingDirUpdate(params: UpdateWorkingDirRequest): Promise<void> {

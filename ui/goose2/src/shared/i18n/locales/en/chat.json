@@ -126,7 +126,9 @@
   "message": {
     "copied": "Copied",
     "defaultImageAlt": "Attached",
-    "mcpAppUnderConstruction": "🚧 MCP App Rendering is under construction",
+    "mcpApp": "MCP App",
+    "mcpAppLoading": "Loading MCP App…",
+    "mcpAppRenderError": "Unable to render MCP App inline.",
     "redactedThinking": "(thinking redacted)"
   },
   "persona": {

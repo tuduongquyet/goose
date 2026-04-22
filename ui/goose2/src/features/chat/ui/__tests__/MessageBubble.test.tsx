@@ -1,11 +1,37 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../MessageBubble";
 import { useAgentStore } from "@/features/agents/stores/agentStore";
 import type { Message } from "@/shared/types/messages";
 import { openPath } from "@tauri-apps/plugin-opener";
 const mockWriteText = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("@mcp-ui/client", () => ({
+  AppRenderer: (props: { toolName?: string }) => (
+    <div data-testid="mock-app-renderer">
+      {props.toolName ?? "app-renderer"}
+    </div>
+  ),
+}));
+
+vi.mock("@/shared/api/gooseServeHost", () => ({
+  getGooseServeHostInfo: vi.fn().mockResolvedValue({
+    httpBaseUrl: "http://127.0.0.1:4242",
+    secretKey: "test-secret",
+  }),
+}));
+
+vi.mock("@/shared/theme/ThemeProvider", () => ({
+  useTheme: () => ({ resolvedTheme: "dark" }),
+}));
+
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openPath: vi.fn(),
 }));
@@ -380,7 +406,7 @@ describe("MessageBubble", () => {
     expect(screen.queryByText("Tool result")).not.toBeInTheDocument();
   });
 
-  it("renders MCP App blocks", () => {
+  it("renders MCP App blocks", async () => {
     const msg = assistantMessage([
       {
         type: "toolRequest",
@@ -429,8 +455,11 @@ describe("MessageBubble", () => {
 
     const mcpAppView = screen.getByTestId("mcp-app-view");
     expect(mcpAppView).toBeInTheDocument();
-    expect(mcpAppView).toHaveTextContent("ui://weather/app");
-    expect(mcpAppView).toHaveTextContent("<div>Hello</div>");
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-app-renderer")).toHaveTextContent(
+        "weather__open_app",
+      );
+    });
   });
 
   it("renders thinking content as Reasoning block", () => {

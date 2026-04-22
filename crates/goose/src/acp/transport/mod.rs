@@ -95,7 +95,7 @@ async fn health() -> &'static str {
     "ok"
 }
 
-pub fn create_router(server: Arc<AcpServer>) -> Router {
+pub fn create_router(server: Arc<AcpServer>, secret_key: String) -> Router {
     let http_state = Arc::new(http::HttpState::new(server.clone()));
     let ws_state = Arc::new(websocket::WsState::new(server));
 
@@ -124,5 +124,6 @@ pub fn create_router(server: Arc<AcpServer>) -> Router {
             get(handle_get).with_state((http_state.clone(), ws_state)),
         )
         .route("/acp", delete(http::handle_delete).with_state(http_state))
+        .merge(super::mcp_app_proxy::routes(secret_key))
         .layer(cors)
 }

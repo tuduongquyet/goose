@@ -1,0 +1,141 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <meta name="referrer" content="no-referrer"/>
+    <meta name="color-scheme" content="light dark"/>
+    <meta http-equiv="Content-Security-Policy" content="{{OUTER_CSP}}"/>
+    <title>MCP App Sandbox</title>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      (function () {
+        'use strict';
+
+        let guestIframe = null;
+
+        function getProxyParams() {
+          var params = new URLSearchParams(window.location.search);
+          return {
+            secret: params.get('secret') || '',
+            baseUrl: window.location.origin
+          };
+        }
+
+        async function storeGuestHtml(html) {
+          var proxyParams = getProxyParams();
+          var response = await fetch(proxyParams.baseUrl + '/mcp-app-guest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              secret: proxyParams.secret,
+              html: html
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to store guest HTML: ' + response.status);
+          }
+
+          var data = await response.json();
+          return data.nonce;
+        }
+
+        async function createGuestIframe(html, permissions) {
+          if (guestIframe) {
+            guestIframe.remove();
+          }
+
+          guestIframe = document.createElement('iframe');
+          guestIframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+
+          var allowList = [];
+          if (permissions && permissions.camera) allowList.push('camera');
+          if (permissions && permissions.microphone) allowList.push('microphone');
+          if (permissions && permissions.geolocation) allowList.push('geolocation');
+          if (permissions && permissions.clipboardWrite) allowList.push('clipboard-write');
+          if (allowList.length > 0) {
+            guestIframe.setAttribute('allow', allowList.join('; '));
+          }
+
+          guestIframe.style.cssText = 'width:100%; height:100%; border:none;';
+
+          try {
+            var nonce = await storeGuestHtml(html);
+            var proxyParams = getProxyParams();
+            guestIframe.src = proxyParams.baseUrl + '/mcp-app-guest?secret=' + encodeURIComponent(proxyParams.secret) + '&nonce=' + encodeURIComponent(nonce);
+          } catch (e) {
+            console.warn('Failed to use /mcp-app-guest endpoint, falling back to srcdoc:', e);
+            guestIframe.srcdoc = html;
+          }
+
+          document.body.appendChild(guestIframe);
+        }
+
+        function handleHostMessage(event) {
+          if (event.source !== window.parent) {
+            return;
+          }
+
+          var data = event.data;
+          if (!data || typeof data !== 'object') {
+            return;
+          }
+
+          if (data.method === 'ui/notifications/sandbox-resource-ready') {
+            var params = data.params || {};
+            createGuestIframe(params.html || '', params.permissions || null);
+            return;
+          }
+
+          if (guestIframe && guestIframe.contentWindow) {
+            guestIframe.contentWindow.postMessage(data, '*');
+          }
+        }
+
+        function handleGuestMessage(event) {
+          if (!guestIframe || event.source !== guestIframe.contentWindow) {
+            return;
+          }
+
+          var data = event.data;
+          if (!data || typeof data !== 'object') {
+            return;
+          }
+
+          window.parent.postMessage(data, '*');
+        }
+
+        function handleMessage(event) {
+          if (event.source === window.parent) {
+            handleHostMessage(event);
+          } else if (guestIframe && event.source === guestIframe.contentWindow) {
+            handleGuestMessage(event);
+          }
+        }
+
+        window.addEventListener('message', handleMessage);
+        window.parent.postMessage({
+          jsonrpc: '2.0',
+          method: 'ui/notifications/sandbox-proxy-ready',
+          params: {}
+        }, '*');
+      })();
+    </script>
+  </body>
+</html>
