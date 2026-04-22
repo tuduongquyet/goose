@@ -201,16 +201,17 @@ function handleReplay(sessionId: string, update: SessionUpdate): void {
       const messageId = update.messageId ?? crypto.randomUUID();
       const buffer = ensureReplayBuffer(sessionId);
       const existing = getBufferedMessage(sessionId, messageId);
-      // ACP SDK's ContentBlock union doesn't expose annotations on the text branch,
-      // but the wire format includes it. Guard with a runtime typeof check.
-      // biome-ignore lint/suspicious/noExplicitAny: ACP SDK type narrowing
+      // biome-ignore lint/suspicious/noExplicitAny: wire format has annotations but SDK types don't
       const rawAnn = (update.content as any).annotations;
       const ann: TextContent["annotations"] | undefined =
         typeof rawAnn === "object" && rawAnn !== null ? rawAnn : undefined;
-      // Drop blocks whose audience does not include "user" so that
-      // assistant-only system prompt blocks never enter chat state
-      // (other consumers like getTextContent read raw message.content).
-      if (ann?.audience && !ann.audience.includes("user")) break;
+      // Drop assistant-only blocks so they never enter chat state.
+      if (
+        ann?.audience &&
+        ann.audience.length > 0 &&
+        !ann.audience.includes("user")
+      )
+        break;
       const textBlock = makeTextBlock(update.content.text, ann);
       if (!existing) {
         buffer.push({

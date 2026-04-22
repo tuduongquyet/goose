@@ -101,7 +101,7 @@ interface ContentSection {
 function filterUserVisibleContent(content: MessageContent[]): MessageContent[] {
   return content.filter((b) => {
     const aud = b.annotations?.audience;
-    return !aud || aud.includes("user");
+    return !aud || aud.length === 0 || aud.includes("user");
   });
 }
 
