@@ -1095,57 +1095,16 @@ impl GooseAcpAgent {
         self.sessions.lock().await.contains_key(session_id)
     }
 
-    /// Try to split a text block containing persona-instructions and user-message XML
-    /// into (context_text, user_text). Returns None if the pattern doesn't match.
-    fn split_persona_user_text(text: &str) -> Option<(String, String)> {
-        let trimmed = text.trim();
-        if !trimmed.starts_with("<persona-instructions>") {
-            return None;
-        }
-        // Find the user-message boundaries
-        let user_start_tag = "<user-message>";
-        let user_end_tag = "</user-message>";
-        let start_idx = trimmed.find(user_start_tag)?;
-        let end_idx = trimmed.rfind(user_end_tag)?;
-        if start_idx >= end_idx {
-            return None;
-        }
-        let user_text = trimmed[start_idx + user_start_tag.len()..end_idx]
-            .trim()
-            .to_string();
-        // Context is everything outside the user-message tags
-        let context_text = format!(
-            "{}{}",
-            &trimmed[..start_idx],
-            &trimmed[end_idx + user_end_tag.len()..]
-        )
-        .trim()
-        .to_string();
-        Some((context_text, user_text))
-    }
-
-    /// Convert ACP prompt content blocks into messages. When the prompt contains
-    /// persona-instructions wrapping a user-message, splits into a hidden context
-    /// message and a visible user message. Returns (messages_to_persist, message_for_agent).
-    fn convert_acp_prompt_to_messages(
-        &self,
-        prompt: Vec<ContentBlock>,
-    ) -> (Vec<Message>, Message) {
-        // Build the combined message preserving original block order
-        let mut combined_message = Message::user();
-        let mut combined_text = String::new();
-        let mut has_images = false;
-
-        for block in &prompt {
+    /// Convert ACP prompt content blocks into a user message.
+    fn convert_acp_prompt_to_message(prompt: &[ContentBlock]) -> Message {
+        let mut message = Message::user();
+        for block in prompt {
             match block {
                 ContentBlock::Text(text) => {
-                    combined_message = combined_message.with_text(&text.text);
-                    combined_text.push_str(&text.text);
+                    message = message.with_text(&text.text);
                 }
                 ContentBlock::Image(image) => {
-                    combined_message =
-                        combined_message.with_image(&image.data, &image.mime_type);
-                    has_images = true;
+                    message = message.with_image(&image.data, &image.mime_type);
                 }
                 ContentBlock::Resource(resource) => {
                     if let EmbeddedResourceResource::TextResourceContents(text_resource) =
@@ -1153,39 +1112,18 @@ impl GooseAcpAgent {
                     {
                         let header = format!("--- Resource: {} ---\n", text_resource.uri);
                         let content = format!("{}{}\n---\n", header, text_resource.text);
-                        combined_message = combined_message.with_text(&content);
-                        combined_text.push_str(&content);
+                        message = message.with_text(&content);
                     }
                 }
                 ContentBlock::ResourceLink(link) => {
                     if let Some(text) = read_resource_link(link.clone()) {
-                        combined_message = combined_message.with_text(text.clone());
-                        combined_text.push_str(&text);
+                        message = message.with_text(text);
                     }
                 }
                 ContentBlock::Audio(..) | _ => (),
             }
         }
-
-        // Try to split persona context from user message
-        if let Some((context_text, user_text)) = Self::split_persona_user_text(&combined_text) {
-            let context_msg = Message::user().with_text(&context_text).agent_only();
-
-            let mut visible_msg = Message::user().with_text(&user_text);
-            // Non-text content (images, resources) goes on the visible message
-            if has_images {
-                for block in &prompt {
-                    if let ContentBlock::Image(image) = block {
-                        visible_msg =
-                            visible_msg.with_image(&image.data, &image.mime_type);
-                    }
-                }
-            }
-
-            (vec![context_msg, visible_msg], combined_message)
-        } else {
-            (vec![combined_message.clone()], combined_message)
-        }
+        message
     }
 
     async fn handle_message_content(
@@ -2102,19 +2040,47 @@ impl GooseAcpAgent {
             .await?;
         debug!(target: "perf", sid = %sid, ms = t_agent.elapsed().as_millis() as u64, "perf: prompt get_session_agent (waits for agent setup)");
 
-        let (messages_to_persist, agent_message) =
-            self.convert_acp_prompt_to_messages(args.prompt);
+        // Extract system prompt from _meta if provided, persist as hidden message
+        let system_prompt = args
+            .meta
+            .as_ref()
+            .and_then(|m| m.get("systemPrompt"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
+
+        // Build the agent message: system prompt + user content combined
+        let agent_message = if let Some(ref sp) = system_prompt {
+            let mut msg = Message::user().with_text(sp);
+            for content in user_message.content.iter() {
+                msg.content.push(content.clone());
+            }
+            msg
+        } else {
+            user_message.clone()
+        };
 
         let t_persist = std::time::Instant::now();
-        for msg in &messages_to_persist {
+        // Persist hidden system prompt message if present
+        if let Some(ref sp) = system_prompt {
+            let context_msg = Message::user().with_text(sp).agent_only();
             self.thread_manager
-                .append_message(&thread_id, Some(&internal_session_id), msg)
+                .append_message(&thread_id, Some(&internal_session_id), &context_msg)
                 .await
                 .map_err(|e| {
                     sacp::Error::internal_error()
                         .data(format!("Failed to persist message: {}", e))
                 })?;
         }
+        // Persist visible user message
+        self.thread_manager
+            .append_message(&thread_id, Some(&internal_session_id), &user_message)
+            .await
+            .map_err(|e| {
+                sacp::Error::internal_error()
+                    .data(format!("Failed to persist message: {}", e))
+            })?;
         debug!(target: "perf", sid = %sid, ms = t_persist.elapsed().as_millis() as u64, "perf: prompt append_user_message");
 
         let session_config = SessionConfig {

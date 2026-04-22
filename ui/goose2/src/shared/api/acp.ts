@@ -71,17 +71,15 @@ export async function acpSendMessage(
     throw new Error("Session not prepared. Call acpPrepareSession first.");
   }
 
-  const hasSystem = systemPrompt && systemPrompt.trim().length > 0;
-  const effectivePrompt = hasSystem
-    ? `<persona-instructions>\n${systemPrompt}\n</persona-instructions>\n\n<user-message>\n${prompt}\n</user-message>`
-    : prompt;
-
-  const content: ContentBlock[] = [{ type: "text", text: effectivePrompt }];
+  const content: ContentBlock[] = [{ type: "text", text: prompt }];
   if (images) {
     for (const [data, mimeType] of images) {
       content.push({ type: "image", data, mimeType } as ContentBlock);
     }
   }
+
+  const hasSystem = systemPrompt && systemPrompt.trim().length > 0;
+  const meta = hasSystem ? { systemPrompt } : undefined;
 
   const messageId = crypto.randomUUID();
   setActiveMessageId(gooseSessionId, messageId);
@@ -90,7 +88,7 @@ export async function acpSendMessage(
     `[perf:send] ${sid} acpSendMessage → prompt(len=${prompt.length}, imgs=${images?.length ?? 0})`,
   );
   const tPrompt = performance.now();
-  await directAcp.prompt(gooseSessionId, content);
+  await directAcp.prompt(gooseSessionId, content, meta);
   const tDone = performance.now();
   perfLog(
     `[perf:send] ${sid} prompt() resolved in ${(tDone - tPrompt).toFixed(1)}ms (total acpSendMessage ${(tDone - tStart).toFixed(1)}ms)`,
