@@ -105,48 +105,90 @@ export type GetSessionExtensionsResponse = {
 };
 
 /**
- * List providers available through goose, including the config-default sentinel.
+ * List providers with setup metadata and the current model inventory snapshot.
  */
 export type ListProvidersRequest = {
-    [key: string]: unknown;
+    /**
+     * Only return entries for these providers. Empty means all.
+     */
+    providerIds?: Array<string>;
 };
 
 /**
  * Provider list response.
  */
 export type ListProvidersResponse = {
-    providers: Array<ProviderListEntry>;
-};
-
-export type ProviderListEntry = {
-    id: string;
-    label: string;
+    entries: Array<ProviderInventoryEntryDto>;
 };
 
 /**
- * List providers with full metadata (config keys, setup steps, etc.).
+ * Provider inventory entry.
  */
-export type GetProviderDetailsRequest = {
-    [key: string]: unknown;
-};
-
-/**
- * Provider details response.
- */
-export type GetProviderDetailsResponse = {
-    providers: Array<ProviderDetailEntry>;
-};
-
-export type ProviderDetailEntry = {
-    name: string;
-    displayName: string;
+export type ProviderInventoryEntryDto = {
+    /**
+     * Provider identifier.
+     */
+    providerId: string;
+    /**
+     * Human-readable provider name.
+     */
+    providerName: string;
+    /**
+     * Description of the provider's capabilities.
+     */
     description: string;
+    /**
+     * The default/recommended model for this provider.
+     */
     defaultModel: string;
-    isConfigured: boolean;
+    /**
+     * Whether Goose has enough configuration to use this provider.
+     */
+    configured: boolean;
+    /**
+     * Provider classification such as `Preferred`, `Builtin`, `Declarative`, or `Custom`.
+     */
     providerType: string;
+    /**
+     * Required configuration keys and setup metadata.
+     */
     configKeys: Array<ProviderConfigKey>;
-    setupSteps?: Array<string>;
-    knownModels?: Array<ModelEntry>;
+    /**
+     * Step-by-step setup instructions, when present.
+     */
+    setupSteps: Array<string>;
+    /**
+     * Whether this provider supports background inventory refresh.
+     */
+    supportsRefresh: boolean;
+    /**
+     * Whether a refresh is currently in flight.
+     */
+    refreshing: boolean;
+    /**
+     * The list of available models.
+     */
+    models: Array<ProviderInventoryModelDto>;
+    /**
+     * When this entry was last successfully refreshed (ISO 8601).
+     */
+    lastUpdatedAt?: string | null;
+    /**
+     * When a refresh was most recently attempted (ISO 8601).
+     */
+    lastRefreshAttemptAt?: string | null;
+    /**
+     * The last refresh failure message, if any.
+     */
+    lastRefreshError?: string | null;
+    /**
+     * Whether we believe this data may be outdated.
+     */
+    stale: boolean;
+    /**
+     * Guidance message shown when this provider manages its own model selection externally.
+     */
+    modelSelectionHint?: string | null;
 };
 
 export type ProviderConfigKey = {
@@ -159,24 +201,66 @@ export type ProviderConfigKey = {
     primary?: boolean;
 };
 
-export type ModelEntry = {
+/**
+ * A single model in provider inventory.
+ */
+export type ProviderInventoryModelDto = {
+    /**
+     * Model identifier as the provider knows it.
+     */
+    id: string;
+    /**
+     * Human-readable display name.
+     */
     name: string;
-    contextLimit: number;
+    /**
+     * Model family for grouping in UI.
+     */
+    family?: string | null;
+    /**
+     * Context window size in tokens.
+     */
+    contextLimit?: number | null;
+    /**
+     * Whether the model supports reasoning/extended thinking.
+     */
+    reasoning?: boolean | null;
+    /**
+     * Whether this model should appear in the compact recommended picker.
+     */
+    recommended?: boolean;
 };
 
 /**
- * Fetch the full list of models available for a specific provider.
+ * Trigger a background refresh of provider inventories.
  */
-export type GetProviderModelsRequest = {
-    providerName: string;
+export type RefreshProviderInventoryRequest = {
+    /**
+     * Which providers to refresh. Empty means all known providers.
+     */
+    providerIds?: Array<string>;
 };
 
 /**
- * Provider models response.
+ * Refresh acknowledgement.
  */
-export type GetProviderModelsResponse = {
-    models: Array<string>;
+export type RefreshProviderInventoryResponse = {
+    /**
+     * Which providers will be refreshed.
+     */
+    started: Array<string>;
+    /**
+     * Which providers were skipped and why.
+     */
+    skipped?: Array<RefreshProviderInventorySkipDto>;
 };
+
+export type RefreshProviderInventorySkipDto = {
+    providerId: string;
+    reason: RefreshProviderInventorySkipReasonDto;
+};
+
+export type RefreshProviderInventorySkipReasonDto = 'unknown_provider' | 'not_configured' | 'does_not_support_refresh' | 'already_refreshing';
 
 /**
  * Read a single non-secret config value.
@@ -268,6 +352,14 @@ export type ImportSessionResponse = {
 };
 
 /**
+ * Update the project association for a session.
+ */
+export type UpdateSessionProjectRequest = {
+    sessionId: string;
+    projectId?: string | null;
+};
+
+/**
  * Archive a session (soft delete).
  */
 export type ArchiveSessionRequest = {
@@ -281,17 +373,267 @@ export type UnarchiveSessionRequest = {
     sessionId: string;
 };
 
+/**
+ * Create a new source (global or project-scoped).
+ */
+export type CreateSourceRequest = {
+    type: SourceType;
+    name: string;
+    description: string;
+    content: string;
+    global: boolean;
+    /**
+     * Absolute path to the project root. Required when `global` is false.
+     */
+    projectDir?: string | null;
+};
+
+/**
+ * The type of source entity.
+ */
+export type SourceType = 'skill';
+
+export type CreateSourceResponse = {
+    source: SourceEntry;
+};
+
+/**
+ * A source — a user-editable entity backed by an on-disk directory. Sources
+ * may be either `global` (shared across all projects) or project-specific.
+ */
+export type SourceEntry = {
+    type: SourceType;
+    name: string;
+    description: string;
+    content: string;
+    /**
+     * Absolute path to the source's directory on disk.
+     */
+    directory: string;
+    /**
+     * True when the source lives in the user's global sources directory; false
+     * when it lives inside a specific project.
+     */
+    global: boolean;
+};
+
+/**
+ * List sources. If `type` is omitted, sources of all known types are returned.
+ * Both global and project-scoped sources are included when `project_dir` is set.
+ */
+export type ListSourcesRequest = {
+    type?: SourceType | null;
+    projectDir?: string | null;
+};
+
+export type ListSourcesResponse = {
+    sources: Array<SourceEntry>;
+};
+
+/**
+ * Update an existing source's description and content.
+ */
+export type UpdateSourceRequest = {
+    type: SourceType;
+    name: string;
+    description: string;
+    content: string;
+    global: boolean;
+    projectDir?: string | null;
+};
+
+export type UpdateSourceResponse = {
+    source: SourceEntry;
+};
+
+/**
+ * Delete a source and its on-disk directory.
+ */
+export type DeleteSourceRequest = {
+    type: SourceType;
+    name: string;
+    global: boolean;
+    projectDir?: string | null;
+};
+
+/**
+ * Export a source as a portable JSON payload.
+ */
+export type ExportSourceRequest = {
+    type: SourceType;
+    name: string;
+    global: boolean;
+    projectDir?: string | null;
+};
+
+export type ExportSourceResponse = {
+    json: string;
+    filename: string;
+};
+
+/**
+ * Import a source from a JSON export payload produced by `_goose/sources/export`.
+ * The imported source is written under the given scope; on name collisions a
+ * `-imported` suffix is appended.
+ */
+export type ImportSourcesRequest = {
+    data: string;
+    global: boolean;
+    projectDir?: string | null;
+};
+
+export type ImportSourcesResponse = {
+    sources: Array<SourceEntry>;
+};
+
+/**
+ * Transcribe audio via a dictation provider.
+ */
+export type DictationTranscribeRequest = {
+    /**
+     * Base64-encoded audio data
+     */
+    audio: string;
+    /**
+     * MIME type (e.g. "audio/wav", "audio/webm")
+     */
+    mimeType: string;
+    /**
+     * Provider to use: "openai", "groq", "elevenlabs", or "local"
+     */
+    provider: string;
+};
+
+/**
+ * Transcription result.
+ */
+export type DictationTranscribeResponse = {
+    text: string;
+};
+
+/**
+ * Get the configuration status of all dictation providers.
+ */
+export type DictationConfigRequest = {
+    [key: string]: unknown;
+};
+
+/**
+ * Dictation config response — map of provider name to status.
+ */
+export type DictationConfigResponse = {
+    providers: {
+        [key: string]: DictationProviderStatusEntry;
+    };
+};
+
+/**
+ * Per-provider configuration status.
+ */
+export type DictationProviderStatusEntry = {
+    configured: boolean;
+    host?: string | null;
+    description: string;
+    usesProviderConfig: boolean;
+    settingsPath?: string | null;
+    configKey?: string | null;
+    modelConfigKey?: string | null;
+    defaultModel?: string | null;
+    selectedModel?: string | null;
+    availableModels?: Array<DictationModelOption>;
+};
+
+export type DictationModelOption = {
+    id: string;
+    label: string;
+    description: string;
+};
+
+/**
+ * List available local Whisper models with their download status.
+ */
+export type DictationModelsListRequest = {
+    [key: string]: unknown;
+};
+
+export type DictationModelsListResponse = {
+    models: Array<DictationLocalModelStatus>;
+};
+
+export type DictationLocalModelStatus = {
+    id: string;
+    label: string;
+    description: string;
+    sizeMb: number;
+    downloaded: boolean;
+    downloadInProgress: boolean;
+};
+
+/**
+ * Kick off a background download of a local Whisper model.
+ */
+export type DictationModelDownloadRequest = {
+    modelId: string;
+};
+
+/**
+ * Poll the progress of an in-flight download.
+ */
+export type DictationModelDownloadProgressRequest = {
+    modelId: string;
+};
+
+export type DictationModelDownloadProgressResponse = {
+    /**
+     * None when no download is active for this model id.
+     */
+    progress?: DictationDownloadProgress | null;
+};
+
+export type DictationDownloadProgress = {
+    bytesDownloaded: number;
+    totalBytes: number;
+    progressPercent: number;
+    /**
+     * serde lowercase of DownloadStatus: "downloading" | "completed" | "failed" | "cancelled"
+     */
+    status: string;
+    error?: string | null;
+};
+
+/**
+ * Cancel an in-flight download.
+ */
+export type DictationModelCancelRequest = {
+    modelId: string;
+};
+
+/**
+ * Delete a downloaded local Whisper model from disk.
+ */
+export type DictationModelDeleteRequest = {
+    modelId: string;
+};
+
+/**
+ * Persist the user's model selection for a given provider.
+ */
+export type DictationModelSelectRequest = {
+    provider: string;
+    modelId: string;
+};
+
 export type ExtRequest = {
     id: string;
     method: string;
-    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | GetProviderDetailsRequest | GetProviderModelsRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | ArchiveSessionRequest | UnarchiveSessionRequest | {
+    params?: AddExtensionRequest | RemoveExtensionRequest | GetToolsRequest | ReadResourceRequest | UpdateWorkingDirRequest | DeleteSessionRequest | GetExtensionsRequest | GetSessionExtensionsRequest | ListProvidersRequest | RefreshProviderInventoryRequest | ReadConfigRequest | UpsertConfigRequest | RemoveConfigRequest | CheckSecretRequest | UpsertSecretRequest | RemoveSecretRequest | ExportSessionRequest | ImportSessionRequest | UpdateSessionProjectRequest | ArchiveSessionRequest | UnarchiveSessionRequest | CreateSourceRequest | ListSourcesRequest | UpdateSourceRequest | DeleteSourceRequest | ExportSourceRequest | ImportSourcesRequest | DictationTranscribeRequest | DictationConfigRequest | DictationModelsListRequest | DictationModelDownloadRequest | DictationModelDownloadProgressRequest | DictationModelCancelRequest | DictationModelDeleteRequest | DictationModelSelectRequest | {
         [key: string]: unknown;
     } | null;
 };
 
 export type ExtResponse = {
     id: string;
-    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | GetProviderDetailsResponse | GetProviderModelsResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | unknown;
+    result?: EmptyResponse | GetToolsResponse | ReadResourceResponse | GetExtensionsResponse | GetSessionExtensionsResponse | ListProvidersResponse | RefreshProviderInventoryResponse | ReadConfigResponse | CheckSecretResponse | ExportSessionResponse | ImportSessionResponse | CreateSourceResponse | ListSourcesResponse | UpdateSourceResponse | ExportSourceResponse | ImportSourcesResponse | DictationTranscribeResponse | DictationConfigResponse | DictationModelsListResponse | DictationModelDownloadProgressResponse | unknown;
 } | {
     error: {
         code: number;

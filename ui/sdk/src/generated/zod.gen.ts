@@ -90,26 +90,11 @@ export const zGetSessionExtensionsResponse = z.object({
 });
 
 /**
- * List providers available through goose, including the config-default sentinel.
+ * List providers with setup metadata and the current model inventory snapshot.
  */
-export const zListProvidersRequest = z.record(z.unknown());
-
-export const zProviderListEntry = z.object({
-    id: z.string(),
-    label: z.string()
+export const zListProvidersRequest = z.object({
+    providerIds: z.array(z.string()).optional().default([])
 });
-
-/**
- * Provider list response.
- */
-export const zListProvidersResponse = z.object({
-    providers: z.array(zProviderListEntry)
-});
-
-/**
- * List providers with full metadata (config keys, setup steps, etc.).
- */
-export const zGetProviderDetailsRequest = z.record(z.unknown());
 
 export const zProviderConfigKey = z.object({
     name: z.string(),
@@ -124,42 +109,93 @@ export const zProviderConfigKey = z.object({
     primary: z.boolean().optional().default(false)
 });
 
-export const zModelEntry = z.object({
+/**
+ * A single model in provider inventory.
+ */
+export const zProviderInventoryModelDto = z.object({
+    id: z.string(),
     name: z.string(),
-    contextLimit: z.number().int().gte(0)
+    family: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    contextLimit: z.union([
+        z.number().int().gte(0),
+        z.null()
+    ]).optional(),
+    reasoning: z.union([
+        z.boolean(),
+        z.null()
+    ]).optional(),
+    recommended: z.boolean().optional().default(false)
 });
 
-export const zProviderDetailEntry = z.object({
-    name: z.string(),
-    displayName: z.string(),
+/**
+ * Provider inventory entry.
+ */
+export const zProviderInventoryEntryDto = z.object({
+    providerId: z.string(),
+    providerName: z.string(),
     description: z.string(),
     defaultModel: z.string(),
-    isConfigured: z.boolean(),
+    configured: z.boolean(),
     providerType: z.string(),
     configKeys: z.array(zProviderConfigKey),
-    setupSteps: z.array(z.string()).optional().default([]),
-    knownModels: z.array(zModelEntry).optional().default([])
+    setupSteps: z.array(z.string()),
+    supportsRefresh: z.boolean(),
+    refreshing: z.boolean(),
+    models: z.array(zProviderInventoryModelDto),
+    lastUpdatedAt: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    lastRefreshAttemptAt: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    lastRefreshError: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    stale: z.boolean(),
+    modelSelectionHint: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
 });
 
 /**
- * Provider details response.
+ * Provider list response.
  */
-export const zGetProviderDetailsResponse = z.object({
-    providers: z.array(zProviderDetailEntry)
+export const zListProvidersResponse = z.object({
+    entries: z.array(zProviderInventoryEntryDto)
 });
 
 /**
- * Fetch the full list of models available for a specific provider.
+ * Trigger a background refresh of provider inventories.
  */
-export const zGetProviderModelsRequest = z.object({
-    providerName: z.string()
+export const zRefreshProviderInventoryRequest = z.object({
+    providerIds: z.array(z.string()).optional().default([])
+});
+
+export const zRefreshProviderInventorySkipReasonDto = z.enum([
+    'unknown_provider',
+    'not_configured',
+    'does_not_support_refresh',
+    'already_refreshing'
+]);
+
+export const zRefreshProviderInventorySkipDto = z.object({
+    providerId: z.string(),
+    reason: zRefreshProviderInventorySkipReasonDto
 });
 
 /**
- * Provider models response.
+ * Refresh acknowledgement.
  */
-export const zGetProviderModelsResponse = z.object({
-    models: z.array(z.string())
+export const zRefreshProviderInventoryResponse = z.object({
+    started: z.array(z.string()),
+    skipped: z.array(zRefreshProviderInventorySkipDto).optional().default([])
 });
 
 /**
@@ -258,6 +294,17 @@ export const zImportSessionResponse = z.object({
 });
 
 /**
+ * Update the project association for a session.
+ */
+export const zUpdateSessionProjectRequest = z.object({
+    sessionId: z.string(),
+    projectId: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
  * Archive a session (soft delete).
  */
 export const zArchiveSessionRequest = z.object({
@@ -269,6 +316,270 @@ export const zArchiveSessionRequest = z.object({
  */
 export const zUnarchiveSessionRequest = z.object({
     sessionId: z.string()
+});
+
+/**
+ * The type of source entity.
+ */
+export const zSourceType = z.enum(['skill']);
+
+/**
+ * Create a new source (global or project-scoped).
+ */
+export const zCreateSourceRequest = z.object({
+    type: zSourceType,
+    name: z.string(),
+    description: z.string(),
+    content: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * A source — a user-editable entity backed by an on-disk directory. Sources
+ * may be either `global` (shared across all projects) or project-specific.
+ */
+export const zSourceEntry = z.object({
+    type: zSourceType,
+    name: z.string(),
+    description: z.string(),
+    content: z.string(),
+    directory: z.string(),
+    global: z.boolean()
+});
+
+export const zCreateSourceResponse = z.object({
+    source: zSourceEntry
+});
+
+/**
+ * List sources. If `type` is omitted, sources of all known types are returned.
+ * Both global and project-scoped sources are included when `project_dir` is set.
+ */
+export const zListSourcesRequest = z.object({
+    type: z.union([
+        zSourceType,
+        z.null()
+    ]).optional(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zListSourcesResponse = z.object({
+    sources: z.array(zSourceEntry)
+});
+
+/**
+ * Update an existing source's description and content.
+ */
+export const zUpdateSourceRequest = z.object({
+    type: zSourceType,
+    name: z.string(),
+    description: z.string(),
+    content: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zUpdateSourceResponse = z.object({
+    source: zSourceEntry
+});
+
+/**
+ * Delete a source and its on-disk directory.
+ */
+export const zDeleteSourceRequest = z.object({
+    type: zSourceType,
+    name: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Export a source as a portable JSON payload.
+ */
+export const zExportSourceRequest = z.object({
+    type: zSourceType,
+    name: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zExportSourceResponse = z.object({
+    json: z.string(),
+    filename: z.string()
+});
+
+/**
+ * Import a source from a JSON export payload produced by `_goose/sources/export`.
+ * The imported source is written under the given scope; on name collisions a
+ * `-imported` suffix is appended.
+ */
+export const zImportSourcesRequest = z.object({
+    data: z.string(),
+    global: z.boolean(),
+    projectDir: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zImportSourcesResponse = z.object({
+    sources: z.array(zSourceEntry)
+});
+
+/**
+ * Transcribe audio via a dictation provider.
+ */
+export const zDictationTranscribeRequest = z.object({
+    audio: z.string(),
+    mimeType: z.string(),
+    provider: z.string()
+});
+
+/**
+ * Transcription result.
+ */
+export const zDictationTranscribeResponse = z.object({
+    text: z.string()
+});
+
+/**
+ * Get the configuration status of all dictation providers.
+ */
+export const zDictationConfigRequest = z.record(z.unknown());
+
+export const zDictationModelOption = z.object({
+    id: z.string(),
+    label: z.string(),
+    description: z.string()
+});
+
+/**
+ * Per-provider configuration status.
+ */
+export const zDictationProviderStatusEntry = z.object({
+    configured: z.boolean(),
+    host: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    description: z.string(),
+    usesProviderConfig: z.boolean(),
+    settingsPath: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    configKey: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    modelConfigKey: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    defaultModel: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    selectedModel: z.union([
+        z.string(),
+        z.null()
+    ]).optional(),
+    availableModels: z.array(zDictationModelOption).optional().default([])
+});
+
+/**
+ * Dictation config response — map of provider name to status.
+ */
+export const zDictationConfigResponse = z.object({
+    providers: z.record(zDictationProviderStatusEntry)
+});
+
+/**
+ * List available local Whisper models with their download status.
+ */
+export const zDictationModelsListRequest = z.record(z.unknown());
+
+export const zDictationLocalModelStatus = z.object({
+    id: z.string(),
+    label: z.string(),
+    description: z.string(),
+    sizeMb: z.number().int().gte(0),
+    downloaded: z.boolean(),
+    downloadInProgress: z.boolean()
+});
+
+export const zDictationModelsListResponse = z.object({
+    models: z.array(zDictationLocalModelStatus)
+});
+
+/**
+ * Kick off a background download of a local Whisper model.
+ */
+export const zDictationModelDownloadRequest = z.object({
+    modelId: z.string()
+});
+
+/**
+ * Poll the progress of an in-flight download.
+ */
+export const zDictationModelDownloadProgressRequest = z.object({
+    modelId: z.string()
+});
+
+export const zDictationDownloadProgress = z.object({
+    bytesDownloaded: z.number().int().gte(0),
+    totalBytes: z.number().int().gte(0),
+    progressPercent: z.number(),
+    status: z.string(),
+    error: z.union([
+        z.string(),
+        z.null()
+    ]).optional()
+});
+
+export const zDictationModelDownloadProgressResponse = z.object({
+    progress: z.union([
+        zDictationDownloadProgress,
+        z.null()
+    ]).optional()
+});
+
+/**
+ * Cancel an in-flight download.
+ */
+export const zDictationModelCancelRequest = z.object({
+    modelId: z.string()
+});
+
+/**
+ * Delete a downloaded local Whisper model from disk.
+ */
+export const zDictationModelDeleteRequest = z.object({
+    modelId: z.string()
+});
+
+/**
+ * Persist the user's model selection for a given provider.
+ */
+export const zDictationModelSelectRequest = z.object({
+    provider: z.string(),
+    modelId: z.string()
 });
 
 export const zExtRequest = z.object({
@@ -285,8 +596,7 @@ export const zExtRequest = z.object({
             zGetExtensionsRequest,
             zGetSessionExtensionsRequest,
             zListProvidersRequest,
-            zGetProviderDetailsRequest,
-            zGetProviderModelsRequest,
+            zRefreshProviderInventoryRequest,
             zReadConfigRequest,
             zUpsertConfigRequest,
             zRemoveConfigRequest,
@@ -295,8 +605,23 @@ export const zExtRequest = z.object({
             zRemoveSecretRequest,
             zExportSessionRequest,
             zImportSessionRequest,
+            zUpdateSessionProjectRequest,
             zArchiveSessionRequest,
-            zUnarchiveSessionRequest
+            zUnarchiveSessionRequest,
+            zCreateSourceRequest,
+            zListSourcesRequest,
+            zUpdateSourceRequest,
+            zDeleteSourceRequest,
+            zExportSourceRequest,
+            zImportSourcesRequest,
+            zDictationTranscribeRequest,
+            zDictationConfigRequest,
+            zDictationModelsListRequest,
+            zDictationModelDownloadRequest,
+            zDictationModelDownloadProgressRequest,
+            zDictationModelCancelRequest,
+            zDictationModelDeleteRequest,
+            zDictationModelSelectRequest
         ]),
         z.union([
             z.record(z.unknown()),
@@ -316,12 +641,20 @@ export const zExtResponse = z.union([
                 zGetExtensionsResponse,
                 zGetSessionExtensionsResponse,
                 zListProvidersResponse,
-                zGetProviderDetailsResponse,
-                zGetProviderModelsResponse,
+                zRefreshProviderInventoryResponse,
                 zReadConfigResponse,
                 zCheckSecretResponse,
                 zExportSessionResponse,
-                zImportSessionResponse
+                zImportSessionResponse,
+                zCreateSourceResponse,
+                zListSourcesResponse,
+                zUpdateSourceResponse,
+                zExportSourceResponse,
+                zImportSourcesResponse,
+                zDictationTranscribeResponse,
+                zDictationConfigResponse,
+                zDictationModelsListResponse,
+                zDictationModelDownloadProgressResponse
             ]),
             z.unknown()
         ]).optional()

@@ -5,7 +5,7 @@ use crate::providers::api_client::AuthProvider;
 use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
 use crate::providers::errors::ProviderError;
 use crate::providers::formats::openai_responses::responses_api_to_streaming_message;
-use crate::providers::openai_compatible::handle_status_openai_compat;
+use crate::providers::openai_compatible::handle_status;
 use crate::providers::retry::ProviderRetry;
 use crate::session_context::SESSION_ID_HEADER;
 use anyhow::{anyhow, Result};
@@ -806,6 +806,10 @@ impl ChatGptCodexAuthProvider {
         }
     }
 
+    fn clear_cached_tokens(&self) {
+        self.cache.clear();
+    }
+
     async fn get_valid_token(&self) -> Result<TokenData> {
         if let Some(mut token_data) = self.cache.load() {
             if token_data.expires_at > Utc::now() + chrono::Duration::seconds(60) {
@@ -865,6 +869,11 @@ pub struct ChatGptCodexProvider {
 }
 
 impl ChatGptCodexProvider {
+    pub async fn cleanup() -> Result<()> {
+        TokenCache::new().clear();
+        Ok(())
+    }
+
     pub async fn from_env(model: ModelConfig) -> Result<Self> {
         let auth_provider = Arc::new(ChatGptCodexAuthProvider::new(
             ChatGptCodexAuthState::instance(),
@@ -919,7 +928,7 @@ impl ChatGptCodexProvider {
             .await
             .map_err(|e| ProviderError::RequestFailed(e.to_string()))?;
 
-        handle_status_openai_compat(response).await
+        handle_status(response).await
     }
 }
 
@@ -997,10 +1006,25 @@ impl Provider for ChatGptCodexProvider {
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
-        self.auth_provider
-            .get_valid_token()
+        let previous_token = self.auth_provider.cache.load();
+        self.auth_provider.clear_cached_tokens();
+
+        let result = perform_oauth_flow(self.auth_provider.state.as_ref())
             .await
-            .map_err(|e| ProviderError::Authentication(format!("OAuth flow failed: {}", e)))?;
+            .and_then(|token_data| self.auth_provider.cache.save(&token_data));
+
+        if let Err(e) = result {
+            if let Some(previous_token) = previous_token.as_ref() {
+                if self.auth_provider.cache.load().is_none() {
+                    let _ = self.auth_provider.cache.save(previous_token);
+                }
+            }
+            return Err(ProviderError::Authentication(format!(
+                "OAuth flow failed: {}",
+                e
+            )));
+        }
+
         Ok(())
     }
 

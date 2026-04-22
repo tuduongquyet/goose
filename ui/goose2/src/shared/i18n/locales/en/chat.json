@@ -108,7 +108,7 @@
   },
   "input": {
     "ariaLabel": "Chat message input",
-    "placeholder": "Message {{agent}}, @ to mention personas"
+    "placeholder": "Message {{agent}}, @ to mention agents"
   },
   "loading": {
     "compacting": "Compacting conversation...",
@@ -117,8 +117,11 @@
   },
   "mention": {
     "ariaLabel": "Mention suggestions",
-    "title": "Mention a persona",
+    "title": "Mention an agent",
     "filesTitle": "Files"
+  },
+  "notifications": {
+    "compactionComplete": "Conversation compacted. Older context was summarized."
   },
   "message": {
     "copied": "Copied",
@@ -127,9 +130,9 @@
   },
   "persona": {
     "chooseAssistant": "Choose assistant",
-    "create": "Create persona...",
+    "create": "Create agent...",
     "clearActive": "Clear active assistant",
-    "defaultDescription": "No persona - chat directly with the agent"
+    "defaultDescription": "No agent selected - chat directly with Goose"
   },
   "queue": {
     "dismiss": "Dismiss queued message",
@@ -163,13 +166,25 @@
     "createProject": "Create project",
     "generalChatWithoutProject": "General chat without project context",
     "loading": "Loading...",
+    "loadingModels": "Loading models...",
     "model": "Model",
+    "allModels": "All models",
+    "searchModels": "Search models...",
+    "settings": "Settings",
+    "recommended": "Recommended",
+    "noModelsAvailable": "No models available",
+    "noSearchResults": "No matching models",
+    "showAllModels": "Browse all models",
     "noProject": "No project",
     "selectModel": "Select model",
     "selectProject": "Select project",
     "sendMessage": "Send message",
     "stopGeneration": "Stop generation",
-    "voiceInputSoon": "Voice input (coming soon)"
+    "voiceInput": "Voice dictation",
+    "voiceInputDisabled": "Configure a voice provider in Settings to enable dictation",
+    "voiceInputRecording": "Listening...",
+    "voiceInputTranscribing": "Transcribing...",
+    "voiceInputAutoSubmitHint": "Say \"submit\" to send"
   },
   "tools": {
     "fileNotFound": "File not found: {{path}}",

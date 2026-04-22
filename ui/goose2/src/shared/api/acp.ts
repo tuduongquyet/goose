@@ -1,6 +1,11 @@
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 import * as directAcp from "./acpApi";
+import type { AcpSessionInfo } from "./acpApi";
 import * as sessionTracker from "./acpSessionTracker";
+import {
+  getCatalogEntry,
+  resolveAgentProviderCatalogId,
+} from "@/features/providers/providerCatalog";
 import {
   setActiveMessageId,
   clearActiveMessageId,
@@ -23,11 +28,34 @@ export interface AcpSendMessageOptions {
 
 export interface AcpPrepareSessionOptions {
   personaId?: string;
+  projectId?: string;
+}
+
+export interface AcpCreateSessionOptions extends AcpPrepareSessionOptions {
+  modelId?: string | null;
 }
 
 /** Discover ACP providers installed on the system. */
 export async function discoverAcpProviders(): Promise<AcpProvider[]> {
-  return directAcp.listProviders();
+  const providers = await directAcp.listProviders();
+  const seen = new Set<string>();
+
+  return providers
+    .map((provider) => {
+      const catalogId = resolveAgentProviderCatalogId(
+        provider.id,
+        provider.label,
+      );
+      if (!catalogId || seen.has(catalogId)) {
+        return null;
+      }
+      seen.add(catalogId);
+      return {
+        id: catalogId,
+        label: getCatalogEntry(catalogId)?.displayName ?? provider.label,
+      };
+    })
+    .filter((provider): provider is AcpProvider => provider !== null);
 }
 
 /** Send a message to an ACP agent. Response streams via Tauri events. */
@@ -79,21 +107,47 @@ export async function acpPrepareSession(
   providerId: string,
   workingDir: string,
   options: AcpPrepareSessionOptions = {},
-): Promise<void> {
+): Promise<string> {
   const sid = sessionId.slice(0, 8);
   const t0 = performance.now();
   perfLog(
     `[perf:prepare] ${sid} acpPrepareSession start (provider=${providerId})`,
   );
-  await sessionTracker.prepareSession(
+  const gooseSessionId = await sessionTracker.prepareSession(
     sessionId,
     providerId,
     workingDir,
     options.personaId,
+    options.projectId,
   );
   perfLog(
     `[perf:prepare] ${sid} acpPrepareSession done in ${(performance.now() - t0).toFixed(1)}ms`,
   );
+  return gooseSessionId;
+}
+
+export async function acpCreateSession(
+  providerId: string,
+  workingDir: string,
+  options: AcpCreateSessionOptions = {},
+): Promise<{ sessionId: string }> {
+  const localSessionId = crypto.randomUUID();
+  const gooseSessionId = await acpPrepareSession(
+    localSessionId,
+    providerId,
+    workingDir,
+    options,
+  );
+  sessionTracker.registerSession(
+    gooseSessionId,
+    gooseSessionId,
+    providerId,
+    workingDir,
+  );
+  if (options.modelId) {
+    await directAcp.setModel(gooseSessionId, options.modelId);
+  }
+  return { sessionId: gooseSessionId };
 }
 
 export async function acpSetModel(
@@ -104,13 +158,7 @@ export async function acpSetModel(
   return directAcp.setModel(gooseSessionId ?? sessionId, modelId);
 }
 
-/** Session info returned by the goose binary's list_sessions. */
-export interface AcpSessionInfo {
-  sessionId: string;
-  title: string | null;
-  updatedAt: string | null;
-  messageCount: number;
-}
+export type { AcpSessionInfo };
 
 export interface AcpSessionSearchResult {
   sessionId: string;

@@ -33,8 +33,6 @@ describe("useChat attachments", () => {
       isLoading: false,
       contextPanelOpenBySession: {},
       activeWorkspaceBySession: {},
-      modelsBySession: {},
-      modelCacheByProvider: {},
     });
     useAgentStore.setState({
       personas: [],
@@ -45,6 +43,7 @@ describe("useChat attachments", () => {
       isLoading: false,
       personaEditorOpen: false,
       editingPersona: null,
+      personaEditorMode: "create",
     });
     mockAcpCancelSession.mockResolvedValue(true);
     mockAcpPrepareSession.mockResolvedValue(undefined);

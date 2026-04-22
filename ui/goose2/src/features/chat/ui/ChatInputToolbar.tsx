@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Mic,
   ArrowUp,
@@ -6,6 +6,7 @@ import {
   Paperclip,
   File,
   FolderOpen,
+  Settings2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLocaleFormatting } from "@/shared/i18n";
@@ -16,7 +17,7 @@ import { cn } from "@/shared/lib/cn";
 import { ChatInputSelector } from "./ChatInputSelector";
 import { ContextRing } from "./ContextRing";
 import { PersonaPicker } from "./PersonaPicker";
-import type { ProjectOption } from "./ChatInput";
+import type { ProjectOption } from "../types";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -30,11 +31,9 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/ui/tooltip";
 import { AgentModelPicker } from "./AgentModelPicker";
 import type { ModelOption } from "../types";
 import { formatProviderLabel } from "@/shared/ui/icons/ProviderIcons";
-import { useAgentProviderStatus } from "@/features/providers/hooks/useAgentProviderStatus";
-import {
-  getCatalogEntry,
-  resolveAgentProviderCatalogIdStrict,
-} from "@/features/providers/providerCatalog";
+import { getCatalogEntry } from "@/features/providers/providerCatalog";
+import { supportsContextCompactionControls } from "../lib/autoCompact";
+import { requestOpenSettings } from "@/features/settings/lib/settingsEvents";
 
 const NO_PROJECT_VALUE = "__no_project__";
 const CREATE_PROJECT_VALUE = "__create_project__";
@@ -67,6 +66,8 @@ interface ChatInputToolbarProps {
   currentModelId?: string | null;
   currentModel?: string;
   availableModels: ModelOption[];
+  modelsLoading?: boolean;
+  modelStatusMessage?: string | null;
   onModelChange?: (modelId: string) => void;
   // Project
   selectedProjectId: string | null;
@@ -78,10 +79,12 @@ interface ChatInputToolbarProps {
   // Context
   contextTokens: number;
   contextLimit: number;
+  isContextUsageReady?: boolean;
+  supportsCompactionControls?: boolean;
   // Actions
   canCompactContext?: boolean;
   isCompactingContext?: boolean;
-  onCompactContext?: () => void | Promise<void>;
+  onCompactContext?: () => Promise<unknown> | undefined;
   canSend: boolean;
   isStreaming: boolean;
   hasQueuedMessage: boolean;
@@ -90,6 +93,11 @@ interface ChatInputToolbarProps {
   onAttachFiles?: () => void;
   onAttachFolders?: () => void;
   disabled?: boolean;
+  // Voice
+  voiceEnabled?: boolean;
+  voiceRecording?: boolean;
+  voiceTranscribing?: boolean;
+  onVoiceToggle?: () => void;
   // Layout
   isCompact: boolean;
 }
@@ -106,6 +114,8 @@ export function ChatInputToolbar({
   currentModelId,
   currentModel,
   availableModels,
+  modelsLoading = false,
+  modelStatusMessage = null,
   onModelChange,
   selectedProjectId,
   availableProjects,
@@ -113,6 +123,8 @@ export function ChatInputToolbar({
   onCreateProject,
   contextTokens,
   contextLimit,
+  isContextUsageReady,
+  supportsCompactionControls,
   canCompactContext = false,
   isCompactingContext = false,
   onCompactContext,
@@ -124,31 +136,33 @@ export function ChatInputToolbar({
   onAttachFiles,
   onAttachFolders,
   disabled = false,
+  voiceEnabled = false,
+  voiceRecording = false,
+  voiceTranscribing = false,
+  onVoiceToggle,
   isCompact,
 }: ChatInputToolbarProps) {
   const { t } = useTranslation("chat");
   const { formatNumber } = useLocaleFormatting();
-  const { readyAgentIds } = useAgentProviderStatus();
   const [isContextPopoverOpen, setIsContextPopoverOpen] = useState(false);
+  const compactionControlsSupported =
+    supportsCompactionControls ??
+    supportsContextCompactionControls(selectedProvider);
 
   const agentProviders = useMemo(() => {
     const seen = new Set<string>();
-    const connected: AcpProvider[] = [];
-    for (const p of providers) {
-      const catalogId = resolveAgentProviderCatalogIdStrict(p.id);
-      if (
-        catalogId === null ||
-        !readyAgentIds.has(catalogId) ||
-        seen.has(catalogId)
-      )
+    const available: AcpProvider[] = [];
+    for (const provider of providers) {
+      if (seen.has(provider.id)) {
         continue;
-      seen.add(catalogId);
-      connected.push({
-        id: p.id,
-        label: getCatalogEntry(catalogId)?.displayName ?? p.label,
+      }
+      seen.add(provider.id);
+      available.push({
+        id: provider.id,
+        label: getCatalogEntry(provider.id)?.displayName ?? provider.label,
       });
     }
-    if (connected.length > 0) return connected;
+    if (available.length > 0) return available;
     return [
       {
         id: selectedProvider,
@@ -157,7 +171,7 @@ export function ChatInputToolbar({
           formatProviderLabel(selectedProvider),
       },
     ];
-  }, [providers, readyAgentIds, selectedProvider]);
+  }, [providers, selectedProvider]);
   const selectedProject = availableProjects.find(
     (project) => project.id === selectedProjectId,
   );
@@ -167,6 +181,7 @@ export function ChatInputToolbar({
     : undefined;
   const contextProgress =
     contextLimit > 0 ? Math.min(contextTokens / contextLimit, 1) : 0;
+  const showContextUsage = isContextUsageReady ?? contextLimit > 0;
   const contextPercentDigits =
     contextProgress > 0 && contextProgress < 0.1 ? 1 : 0;
   const usedPercentLabel = formatNumber(contextProgress, {
@@ -199,6 +214,17 @@ export function ChatInputToolbar({
     void onCompactContext();
   };
 
+  const handleOpenAutoCompactSettings = () => {
+    setIsContextPopoverOpen(false);
+    requestOpenSettings("compaction");
+  };
+
+  useEffect(() => {
+    if (!showContextUsage && isContextPopoverOpen) {
+      setIsContextPopoverOpen(false);
+    }
+  }, [isContextPopoverOpen, showContextUsage]);
+
   return (
     <div className="flex items-center justify-between gap-2">
       {/* Left side: pickers */}
@@ -211,9 +237,12 @@ export function ChatInputToolbar({
             currentModelId={currentModelId}
             currentModelName={currentModel ?? null}
             availableModels={availableModels}
+            modelsLoading={modelsLoading}
+            modelStatusMessage={modelStatusMessage}
             onModelChange={onModelChange}
             loading={providersLoading}
             isCompact={isCompact}
+            showSelectedModelInTrigger={selectedPersonaId === null}
           />
         )}
 
@@ -279,7 +308,7 @@ export function ChatInputToolbar({
             />
           )}
 
-          {contextLimit > 0 && (
+          {showContextUsage && (
             <Popover
               open={isContextPopoverOpen}
               onOpenChange={setIsContextPopoverOpen}
@@ -310,7 +339,7 @@ export function ChatInputToolbar({
                 side="top"
                 align="end"
                 sideOffset={8}
-                className="w-52 rounded-2xl p-1 text-left"
+                className="w-60 rounded-2xl p-1 text-left"
               >
                 <div className="px-2 py-1.5 text-sm font-semibold text-foreground">
                   {t("toolbar.contextWindow")}
@@ -329,18 +358,33 @@ export function ChatInputToolbar({
                     </div>
                     <div className="shrink-0">{usedPercentLabel}</div>
                   </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="xs"
-                    className="w-full justify-center"
-                    onClick={handleCompactContext}
-                    disabled={!canCompactContext || isCompactingContext}
-                  >
-                    {isCompactingContext
-                      ? t("toolbar.compacting")
-                      : t("toolbar.compactNow")}
-                  </Button>
+                  {compactionControlsSupported ? (
+                    <div className="flex items-center gap-1 pt-0.5">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="xs"
+                        className="min-w-0 flex-1 justify-center"
+                        onClick={handleCompactContext}
+                        disabled={!canCompactContext || isCompactingContext}
+                      >
+                        {isCompactingContext
+                          ? t("toolbar.compacting")
+                          : t("toolbar.compactNow")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="shrink-0 rounded-full"
+                        onClick={handleOpenAutoCompactSettings}
+                        aria-label={t("toolbar.settings")}
+                        title={t("toolbar.settings")}
+                      >
+                        <Settings2 className="size-4" />
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </PopoverContent>
             </Popover>
@@ -384,14 +428,32 @@ export function ChatInputToolbar({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  disabled
-                  aria-label={t("toolbar.voiceInputSoon")}
+                  disabled={!voiceRecording && (!voiceEnabled || disabled)}
+                  onClick={onVoiceToggle}
+                  aria-label={
+                    voiceRecording
+                      ? t("toolbar.voiceInputRecording")
+                      : t("toolbar.voiceInput")
+                  }
+                  className={cn(
+                    voiceRecording &&
+                      "bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive",
+                    voiceTranscribing && "animate-pulse",
+                  )}
                 >
                   <Mic />
                 </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent>{t("toolbar.voiceInputSoon")}</TooltipContent>
+            <TooltipContent>
+              {!voiceEnabled
+                ? t("toolbar.voiceInputDisabled")
+                : voiceRecording
+                  ? t("toolbar.voiceInputRecording")
+                  : voiceTranscribing
+                    ? t("toolbar.voiceInputTranscribing")
+                    : t("toolbar.voiceInput")}
+            </TooltipContent>
           </Tooltip>
         </div>
 
