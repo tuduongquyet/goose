@@ -30,7 +30,7 @@ export interface StartupTrace {
   flush: () => void;
 }
 
-const STARTUP_TAIL_LIMIT = 40;
+const STARTUP_TAIL_LIMIT = 80;
 const STARTUP_LOGS_TO_KEEP = 20;
 
 export const appendTail = (target: string[], lines: string[]) => {
@@ -45,9 +45,7 @@ const cleanupStartupDiagnostics = (diagnosticsDir: string) => {
     .readdirSync(diagnosticsDir, { withFileTypes: true })
     .filter(
       (entry) =>
-        entry.isFile() &&
-        entry.name.startsWith('goosed-startup-') &&
-        entry.name.endsWith('.json')
+        entry.isFile() && entry.name.startsWith('goosed-startup-') && entry.name.endsWith('.json')
     )
     .map((entry) => {
       const filePath = path.join(diagnosticsDir, entry.name);
@@ -65,9 +63,7 @@ const cleanupStartupDiagnostics = (diagnosticsDir: string) => {
 
 export const createStartupDiagnostics = (
   diagnosticsDir: string | undefined,
-  workingDir: string,
-  goosedPath: string | null,
-  baseUrl: string | null
+  workingDir: string
 ): StartupTrace | null => {
   if (!diagnosticsDir) {
     return null;
@@ -83,9 +79,9 @@ export const createStartupDiagnostics = (
   const diagnostics: StartupDiagnostics = {
     attemptId,
     startedAt: startedAt.toISOString(),
-    goosedPath,
+    goosedPath: null,
     workingDir,
-    baseUrl,
+    baseUrl: null,
     pid: null,
     certFingerprintSeen: false,
     healthCheckSucceeded: false,

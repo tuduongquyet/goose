@@ -213,7 +213,7 @@ export const startGoosed = async (options: StartGoosedOptions): Promise<GoosedRe
 
   const errorLog: string[] = [];
   const workingDir = dir || os.homedir();
-  const startupTrace = createStartupDiagnostics(diagnosticsDir, workingDir, null, null);
+  const startupTrace = createStartupDiagnostics(diagnosticsDir, workingDir);
 
   if (externalGoosed?.enabled && externalGoosed.url) {
     const url = externalGoosed.url.replace(/\/$/, '');
