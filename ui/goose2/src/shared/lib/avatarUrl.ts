@@ -1,4 +1,4 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@/lib/ipc";
 import { getAvatarsDir } from "@/shared/api/agents";
 import type { Avatar } from "@/shared/types/agents";
 

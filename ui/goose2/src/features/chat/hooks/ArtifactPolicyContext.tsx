@@ -219,7 +219,9 @@ export function ArtifactPolicyProvider({
         return;
       }
       lastOpenAtByPathRef.current.set(key, now);
-      await openPath(resolvedTarget);
+      if (window.__TAURI_INTERNALS__) {
+        await openPath(resolvedTarget);
+      }
     },
     [resolveOpenTarget],
   );

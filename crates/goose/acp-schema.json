@@ -272,12 +272,10 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/ProviderInventoryEntryDto"
-          }
+          },
+          "default": []
         }
       },
-      "required": [
-        "entries"
-      ],
       "description": "Provider list response.",
       "x-side": "agent",
       "x-method": "_goose/providers/list"

@@ -113,22 +113,31 @@ export function CreateProjectDialog({
 
   const handleAddDirectory = async () => {
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: t("dialog.addDirectoryDialogTitle"),
-      });
-      if (selected && typeof selected === "string") {
-        const homeDir = await getHomeDir().catch(() => null);
-
-        setPrompt((prev) => {
-          if (hasEquivalentWorkingDir(prev, selected, homeDir)) {
-            return prev;
-          }
-
-          return insertWorkingDir(prev, selected);
+      if (window.__TAURI_INTERNALS__) {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const selected = await open({
+          directory: true,
+          multiple: false,
+          title: t("dialog.addDirectoryDialogTitle"),
         });
+        if (selected && typeof selected === "string") {
+          const homeDir = await getHomeDir().catch(() => null);
+          setPrompt((prev) => {
+            if (hasEquivalentWorkingDir(prev, selected, homeDir)) {
+              return prev;
+            }
+            return insertWorkingDir(prev, selected);
+          });
+        }
+      } else {
+        const selected = window.prompt(t("dialog.addDirectoryDialogTitle"));
+        if (selected) {
+          const homeDir = await getHomeDir().catch(() => null);
+          setPrompt((prev) => {
+            if (hasEquivalentWorkingDir(prev, selected, homeDir)) return prev;
+            return insertWorkingDir(prev, selected);
+          });
+        }
       }
     } catch {
       // Dialog plugin not available

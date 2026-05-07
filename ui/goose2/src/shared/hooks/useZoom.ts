@@ -15,21 +15,22 @@ function getStored(): number {
 }
 
 async function applyZoom(level: number) {
-  if (!window.__TAURI_INTERNALS__) return;
-  try {
-    const { getCurrentWebviewWindow } = await import(
-      "@tauri-apps/api/webviewWindow"
-    );
-    await getCurrentWebviewWindow().setZoom(level);
-  } catch {
-    // non-Tauri environment
+  if (window.__TAURI_INTERNALS__) {
+    try {
+      const { getCurrentWebviewWindow } = await import(
+        "@tauri-apps/api/webviewWindow"
+      );
+      await getCurrentWebviewWindow().setZoom(level);
+    } catch {
+      // non-Tauri environment
+    }
+  } else {
+    document.documentElement.style.zoom = String(level);
   }
 }
 
 export function useZoom() {
   useEffect(() => {
-    if (!window.__TAURI_INTERNALS__) return;
-
     let level = getStored();
     applyZoom(level);
 

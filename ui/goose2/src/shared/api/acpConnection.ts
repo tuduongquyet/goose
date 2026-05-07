@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@/lib/ipc";
 import { GooseClient } from "@aaif/goose-sdk";
 import {
   PROTOCOL_VERSION,
@@ -65,10 +65,16 @@ function monitorConnection(client: GooseClient): void {
 
 async function initializeConnection(): Promise<GooseClient> {
   const tStart = performance.now();
-  const wsUrl: string = await invoke("get_goose_serve_url");
-  perfLog(
-    `[perf:conn] get_goose_serve_url in ${(performance.now() - tStart).toFixed(1)}ms`,
-  );
+  const baseUrl = window.__TAURI_INTERNALS__
+    ? await invoke<string>("get_goose_serve_url")
+    : (typeof __GOOSE_SERVER_URL__ !== "undefined" && __GOOSE_SERVER_URL__) ||
+      `http://${window.location.hostname}:3284`;
+  if (window.__TAURI_INTERNALS__) {
+    perfLog(
+      `[perf:conn] get_goose_serve_url in ${(performance.now() - tStart).toFixed(1)}ms`,
+    );
+  }
+  const wsUrl = baseUrl.replace(/^http/, "ws") + "/acp";
 
   const tStream = performance.now();
   const stream = createWebSocketStream(wsUrl);
@@ -79,14 +85,28 @@ async function initializeConnection(): Promise<GooseClient> {
   );
 
   const tInit = performance.now();
-  await client.initialize({
-    protocolVersion: PROTOCOL_VERSION,
-    clientCapabilities: {},
-    clientInfo: {
-      name: "goose2",
-      version: "0.1.0",
-    },
-  });
+  const INITIALIZE_TIMEOUT_MS = 10_000;
+  await Promise.race([
+    client.initialize({
+      protocolVersion: PROTOCOL_VERSION,
+      clientCapabilities: {},
+      clientInfo: {
+        name: "goose2",
+        version: "0.1.0",
+      },
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(
+              `ACP initialize timed out after ${INITIALIZE_TIMEOUT_MS / 1000}s — is the goose server running at ${baseUrl}?`,
+            ),
+          ),
+        INITIALIZE_TIMEOUT_MS,
+      ),
+    ),
+  ]);
   perfLog(
     `[perf:conn] client.initialize in ${(performance.now() - tInit).toFixed(1)}ms (total ${(performance.now() - tStart).toFixed(1)}ms)`,
   );

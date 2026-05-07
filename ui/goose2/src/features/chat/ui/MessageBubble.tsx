@@ -61,7 +61,9 @@ function MessageAttachmentRow({
         if (!attachment.path) {
           return;
         }
-        void openPath(attachment.path);
+        if (window.__TAURI_INTERNALS__) {
+          void openPath(attachment.path);
+        }
       }}
       disabled={!canOpen}
       className={cn(

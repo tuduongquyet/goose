@@ -237,7 +237,9 @@ export function FilesList({ projectWorkingDirs }: FilesListProps) {
 
   const handleOpenFile = useCallback((path: string) => {
     setSelectedPath(path);
-    void openPath(path);
+    if (window.__TAURI_INTERNALS__) {
+      void openPath(path);
+    }
   }, []);
 
   if (roots.length === 0) {

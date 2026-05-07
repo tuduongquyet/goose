@@ -35,18 +35,23 @@ const DEFAULT_PROVIDER: AcpProvider = {
 
 export async function listProviders(): Promise<AcpProvider[]> {
   const client = await getClient();
-  const result = await client.goose.GooseProvidersList({
-    providerIds: [],
-  });
+  try {
+    const result = await client.goose.GooseProvidersList({
+      providerIds: [],
+    });
 
-  const providers = result.entries
-    .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
-    .map((entry) => ({
-      id: entry.providerId,
-      label: entry.providerName,
-    }));
+    const providers = (result.entries ?? [])
+      .filter((entry) => !DEPRECATED_PROVIDER_IDS.has(entry.providerId))
+      .map((entry) => ({
+        id: entry.providerId,
+        label: entry.providerName,
+      }));
 
-  return [DEFAULT_PROVIDER, ...providers];
+    return [DEFAULT_PROVIDER, ...providers];
+  } catch {
+    // Server may not support this goose-specific extension
+    return [DEFAULT_PROVIDER];
+  }
 }
 
 export async function listSessions(): Promise<AcpSessionInfo[]> {

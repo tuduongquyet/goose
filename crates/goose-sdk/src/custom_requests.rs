@@ -535,6 +535,7 @@ pub struct ListProvidersRequest {
 /// Provider list response.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 pub struct ListProvidersResponse {
+    #[serde(default)]
     pub entries: Vec<ProviderInventoryEntryDto>,
 }
 

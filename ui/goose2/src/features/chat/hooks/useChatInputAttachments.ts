@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@/lib/ipc";
 import {
   inspectAttachmentPaths,
   readImageAttachment,

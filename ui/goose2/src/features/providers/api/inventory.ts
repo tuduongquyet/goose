@@ -12,9 +12,9 @@ export async function getProviderInventory(
   const t0 = performance.now();
   const response = await client.goose.GooseProvidersList({ providerIds });
   perfLog(
-    `[perf:inventory] getProviderInventory done in ${(performance.now() - t0).toFixed(1)}ms (n=${response.entries.length})`,
+    `[perf:inventory] getProviderInventory done in ${(performance.now() - t0).toFixed(1)}ms (n=${(response.entries ?? []).length})`,
   );
-  return response.entries;
+  return response.entries ?? [];
 }
 
 export async function refreshProviderInventory(

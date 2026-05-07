@@ -105,7 +105,13 @@ export function DoctorCheckRow({ check, onFixed }: DoctorCheckRowProps) {
           <button
             type="button"
             onClick={() => {
-              if (check.fixUrl) void openUrl(check.fixUrl);
+              if (check.fixUrl) {
+                if (window.__TAURI_INTERNALS__) {
+                  void openUrl(check.fixUrl);
+                } else {
+                  window.open(check.fixUrl, "_blank");
+                }
+              }
             }}
             aria-label={t("common:buttons.openFixUrl")}
             className="flex flex-shrink-0 items-center justify-center rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

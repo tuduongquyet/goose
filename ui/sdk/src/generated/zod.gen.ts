@@ -192,7 +192,7 @@ export const zProviderInventoryEntryDto = z.object({
  * Provider list response.
  */
 export const zListProvidersResponse = z.object({
-    entries: z.array(zProviderInventoryEntryDto)
+    entries: z.array(zProviderInventoryEntryDto).optional().default([])
 });
 
 /**

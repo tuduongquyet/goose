@@ -150,21 +150,30 @@ export function AvatarDropZone({
   const handleClick = useCallback(async () => {
     if (disabled || isUploading) return;
 
-    const selected = await open({
-      title: t("avatar.chooseDialogTitle"),
-      filters: [
-        {
-          name: t("avatar.dialogFilterName"),
-          extensions: IMAGE_EXTENSIONS,
-        },
-      ],
-      multiple: false,
-    });
-
-    if (selected) {
-      processPath(selected);
+    if (window.__TAURI_INTERNALS__) {
+      const selected = await open({
+        title: t("avatar.chooseDialogTitle"),
+        filters: [
+          {
+            name: t("avatar.dialogFilterName"),
+            extensions: IMAGE_EXTENSIONS,
+          },
+        ],
+        multiple: false,
+      });
+      if (selected) processPath(selected);
+    } else {
+      const file = await new Promise<File | null>((resolve) => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = IMAGE_EXTENSIONS.map((ext) => `.${ext}`).join(",");
+        input.onchange = () => resolve(input.files?.[0] ?? null);
+        input.oncancel = () => resolve(null);
+        input.click();
+      });
+      if (file) processFile(file);
     }
-  }, [disabled, isUploading, processPath, t]);
+  }, [disabled, isUploading, processPath, processFile, t]);
 
   const handleClear = useCallback(
     (e: React.MouseEvent) => {

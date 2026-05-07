@@ -39,7 +39,11 @@ export function LinkSafetyModal({
 
   const handleOpen = useCallback(async () => {
     try {
-      await openUrl(url);
+      if (window.__TAURI_INTERNALS__) {
+        await openUrl(url);
+      } else {
+        window.open(url, "_blank");
+      }
     } catch (e: unknown) {
       console.error("[linkSafety] openUrl failed:", e);
     }

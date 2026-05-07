@@ -147,7 +147,7 @@ export type ListProvidersRequest = {
  * Provider list response.
  */
 export type ListProvidersResponse = {
-    entries: Array<ProviderInventoryEntryDto>;
+    entries?: Array<ProviderInventoryEntryDto>;
 };
 
 /**

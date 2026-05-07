@@ -2,6 +2,7 @@ import type { ContentBlock } from "@agentclientprotocol/sdk";
 import * as directAcp from "./acpApi";
 import type { AcpSessionInfo } from "./acpApi";
 import * as sessionTracker from "./acpSessionTracker";
+import { generateId } from "@/lib/ipc";
 import {
   getCatalogEntry,
   resolveAgentProviderCatalogId,
@@ -88,7 +89,7 @@ export async function acpSendMessage(
     }
   }
 
-  const messageId = crypto.randomUUID();
+  const messageId = generateId();
   setActiveMessageId(gooseSessionId, messageId);
 
   perfLog(
@@ -140,7 +141,7 @@ export async function acpCreateSession(
   workingDir: string,
   options: AcpCreateSessionOptions = {},
 ): Promise<{ sessionId: string }> {
-  const localSessionId = crypto.randomUUID();
+  const localSessionId = generateId();
   const gooseSessionId = await acpPrepareSession(
     localSessionId,
     providerId,

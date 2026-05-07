@@ -185,34 +185,50 @@ export function AgentsView() {
 
   const handleImportPicker = useCallback(async () => {
     try {
-      const selected = await open({
-        multiple: false,
-        directory: false,
-        title: t("common:actions.import"),
-        filters: [
-          {
-            name: "JSON",
-            extensions: ["json"],
-          },
-        ],
-      });
+      if (window.__TAURI_INTERNALS__) {
+        const selected = await open({
+          multiple: false,
+          directory: false,
+          title: t("common:actions.import"),
+          filters: [
+            {
+              name: "JSON",
+              extensions: ["json"],
+            },
+          ],
+        });
 
-      if (!selected || Array.isArray(selected)) {
-        return;
+        if (!selected || Array.isArray(selected)) {
+          return;
+        }
+
+        const { fileBytes, fileName } = await readImportPersonaFile(selected);
+        const validationMessage = validateImportFile({
+          name: fileName,
+          type: "",
+        });
+
+        if (validationMessage) {
+          toast.error(validationMessage);
+          return;
+        }
+
+        await handleImportFileBytes(fileBytes, fileName);
+      } else {
+        const file = await new Promise<File | null>((resolve) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = ".json";
+          input.onchange = () => resolve(input.files?.[0] ?? null);
+          input.oncancel = () => resolve(null);
+          input.click();
+        });
+        if (!file) return;
+        const validationMessage = validateImportFile({ name: file.name, type: file.type });
+        if (validationMessage) { toast.error(validationMessage); return; }
+        const arrayBuffer = await file.arrayBuffer();
+        await handleImportFileBytes(Array.from(new Uint8Array(arrayBuffer)), file.name);
       }
-
-      const { fileBytes, fileName } = await readImportPersonaFile(selected);
-      const validationMessage = validateImportFile({
-        name: fileName,
-        type: "",
-      });
-
-      if (validationMessage) {
-        toast.error(validationMessage);
-        return;
-      }
-
-      await handleImportFileBytes(fileBytes, fileName);
     } catch (err) {
       toast.error(formatAgentError(err, t("view.importFailed")));
     }

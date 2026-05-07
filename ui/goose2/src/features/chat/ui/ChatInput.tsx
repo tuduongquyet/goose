@@ -309,11 +309,24 @@ export function ChatInput({
     }
 
     try {
-      const selected = await open({
-        title: t("attachments.chooseFilesDialogTitle"),
-        multiple: true,
-      });
-      await addPathAttachments(normalizeDialogSelection(selected));
+      if (window.__TAURI_INTERNALS__) {
+        const selected = await open({
+          title: t("attachments.chooseFilesDialogTitle"),
+          multiple: true,
+        });
+        await addPathAttachments(normalizeDialogSelection(selected));
+      } else {
+        const files = await new Promise<File[]>((resolve) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.multiple = true;
+          input.onchange = () => resolve(Array.from(input.files ?? []));
+          input.oncancel = () => resolve([]);
+          input.click();
+        });
+        const paths = files.map((f) => (f as File & { path?: string }).path ?? f.name);
+        await addPathAttachments(paths.filter(Boolean));
+      }
     } catch {
       // Dialog plugin may be unavailable in some environments.
     }
@@ -325,12 +338,26 @@ export function ChatInput({
     }
 
     try {
-      const selected = await open({
-        directory: true,
-        title: t("attachments.chooseFoldersDialogTitle"),
-        multiple: true,
-      });
-      await addPathAttachments(normalizeDialogSelection(selected));
+      if (window.__TAURI_INTERNALS__) {
+        const selected = await open({
+          directory: true,
+          title: t("attachments.chooseFoldersDialogTitle"),
+          multiple: true,
+        });
+        await addPathAttachments(normalizeDialogSelection(selected));
+      } else {
+        const files = await new Promise<File[]>((resolve) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          (input as HTMLInputElement & { webkitdirectory: boolean }).webkitdirectory = true;
+          input.multiple = true;
+          input.onchange = () => resolve(Array.from(input.files ?? []));
+          input.oncancel = () => resolve([]);
+          input.click();
+        });
+        const paths = [...new Set(files.map((f) => (f as File & { path?: string }).path?.replace(/\/[^/]+$/, "") ?? "").filter(Boolean))];
+        await addPathAttachments(paths);
+      }
     } catch {
       // Dialog plugin may be unavailable in some environments.
     }

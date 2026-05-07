@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@/lib/ipc";
 import type { ProviderFieldValue } from "@/shared/types/providers";
 
 export interface ProviderStatus {
